@@ -1,0 +1,10 @@
+**/__pycache__/
+/script_test/
+/scripts_old/
+**/tests/
+/test_single_dipole/
+/single_dipole
+**/*.pkl
+.vscode/
+automation_codes/
+test.py
