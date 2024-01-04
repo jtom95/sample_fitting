@@ -33,7 +33,7 @@ class GaussianRegressionModel:
         max_range: float = None,
         units: DistanceUnits = DistanceUnits.mm,
         n_restarts_optimizer: int = 10,
-        alpha: float = 1e-10,
+        alpha: float = 1e-10
     ):
         if isinstance(units, str):
             units = DistanceUnits[units]
@@ -46,7 +46,12 @@ class GaussianRegressionModel:
         self.units = units
         self.set_normalization_scaler(method=normalize)
 
-    def make_kernel(self, normalize=True, length_scale=None, length_scale_bounds=None, max_range=None):
+    def make_kernel(
+        self, normalize=True, 
+        length_scale=None, 
+        length_scale_bounds=None, 
+        max_range=None
+        ):
         if length_scale is None:
             length_scale = self.length_scales
         if length_scale_bounds is None:
@@ -93,7 +98,7 @@ class GaussianRegressionModel:
             max_range /= self.scaler.scale_[0]
         return length_scale, length_scale_bounds, max_range
 
-    def fit(self, X, y, n_restarts_optimizer=None, alpha=None, **kwargs):
+    def fit(self, X, y, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs):
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -108,7 +113,7 @@ class GaussianRegressionModel:
         X = X / self.units.value
         X_scaled = self.scaler.fit_transform(X)
         
-        self.kernel = self.make_kernel(normalize=True)
+        self.kernel = self.make_kernel(normalize=True, max_range=max_range)
         
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
@@ -121,12 +126,12 @@ class GaussianRegressionModel:
     def extract_theta(self):
         return self.gp.kernel_.theta
 
-    def set_kernel_theta(self, params: dict, normalize_bounds=False):
-        self.kernel = self.make_kernel(normalize=normalize_bounds)
+    def set_kernel_theta(self, params: dict, normalize_bounds=False, max_range=None):
+        self.kernel = self.make_kernel(normalize=normalize_bounds, max_range=max_range)
         self.kernel = self.kernel.clone_with_theta(params)
         return self.kernel
 
-    def fit_from_theta(self, X, y, theta: dict, n_restarts_optimizer=None, alpha=None, **kwargs):
+    def fit_from_theta(self, X, y, theta: dict, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs):
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -139,7 +144,7 @@ class GaussianRegressionModel:
         # change the units of the spatial coordinates
         X = X / self.units.value
         X_scaled = self.scaler.fit_transform(X)
-        self.kernel = self.set_kernel_theta(theta, normalize_bounds=True)
+        self.kernel = self.set_kernel_theta(theta, max_range=max_range, normalize_bounds=True)
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
             n_restarts_optimizer=n_restarts_optimizer,

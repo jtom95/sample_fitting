@@ -10,17 +10,16 @@ from my_packages.classes.aux_classes import Grid
 
 
 class CorrelationAnalyzer:
-    def __init__(self, data: np.ndarray, ideal_grid: Grid = None, normalize=True):
+    def __init__(self, data: np.ndarray, position_grid: Grid = None, normalize=True):
         if normalize:
             data = self.normalize_data(data)
         self.data = data
-        self.ideal_grid = ideal_grid
+        self.position_grid = position_grid
         self.df = pd.DataFrame(data.T)
-    
-    @staticmethod 
+
+    @staticmethod
     def normalize_data(data: np.ndarray) -> np.ndarray:
         return (data - data.min()) / (data.max() - data.min())
-        
 
     def get_correlation_matrix(self, axis: int = 0) -> np.ndarray:
         if axis == 0:
@@ -50,27 +49,27 @@ class CorrelationAnalyzer:
         tolerancey=5,
         label_x="x",
         label_y="y",
-        use_ideal_grid=False,
+        use_grid=False,
         rotated_imshow=False,
         ax=None,
         **kwargs,
     ):
         fig, ax = plt.subplots(1, 2, figsize=(12, 3), constrained_layout=True)
 
-        if use_ideal_grid:
+        if use_grid:
             if rotated_imshow:
                 extent = [
-                    self.ideal_grid[1].min(),
-                    self.ideal_grid[1].max(),
-                    self.ideal_grid[0].min(),
-                    self.ideal_grid[0].max(),
+                    self.position_grid[1].min(),
+                    self.position_grid[1].max(),
+                    self.position_grid[0].min(),
+                    self.position_grid[0].max(),
                 ]
             else:
                 extent = [
-                    self.ideal_grid[0].min(),
-                    self.ideal_grid[0].max(),
-                    self.ideal_grid[1].min(),
-                    self.ideal_grid[1].max(),
+                    self.position_grid[0].min(),
+                    self.position_grid[0].max(),
+                    self.position_grid[1].min(),
+                    self.position_grid[1].max(),
                 ]
         else:
             if rotated_imshow:
@@ -86,7 +85,7 @@ class CorrelationAnalyzer:
         else:
             q = ax[0].imshow(data_to_show, origin="lower", extent=extent, **kwargs)
 
-        if use_ideal_grid:
+        if use_grid:
             ax[0].xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
             ax[0].yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
             if rotated_imshow:
@@ -111,7 +110,7 @@ class CorrelationAnalyzer:
             tolerance=tolerancex,
             ax=ax[1],
             label=label_x,
-            use_ideal_grid=use_ideal_grid,
+            use_grid=use_grid,
         )
         self.plot_variogram(
             lag_step=lag_stepy,
@@ -120,7 +119,7 @@ class CorrelationAnalyzer:
             tolerance=tolerancey,
             ax=ax[1],
             label=label_y,
-            use_ideal_grid=use_ideal_grid,
+            use_grid=use_grid,
         )
         ax[0].set_title("Scan")
         ax[1].set_title("Variogram")
@@ -138,7 +137,7 @@ class CorrelationAnalyzer:
         increase_lag_after=None,
         increase_lag_by=3,
         max_range=None,
-        use_ideal_grid=False,
+        use_grid=False,
         weighted=False,
         deg=True,
         **kwargs,
@@ -150,7 +149,7 @@ class CorrelationAnalyzer:
             lag (int, optional): The starting lag distance. Defaults to 1.
             angle (float | int | str, optional): The angle for directional variogram. Defaults to "x".
             tolerance (float, optional): The angular tolerance in degrees. Defaults to 0.5.
-            use_ideal_grid (bool, optional): Whether to use an ideal grid. Defaults to False.
+            use_grid (bool, optional): Whether to use an ideal grid. Defaults to False.
             deg (bool, optional): Whether the angle is in degrees. Defaults to False.
         """
 
@@ -165,7 +164,7 @@ class CorrelationAnalyzer:
             max_range=max_range,
             increase_lag_after=increase_lag_after,
             increase_lag_by=increase_lag_by,
-            use_ideal_grid=use_ideal_grid,
+            use_grid=use_grid,
             weighted=weighted,
             deg=deg,
         ):
@@ -194,7 +193,7 @@ class CorrelationAnalyzer:
 
         ax.plot(lags, semivariances, **kwargs)
         ax.set_title(f"Variogram - Angle: {angle}")
-        if use_ideal_grid:
+        if use_grid:
             ax.set_xlabel("Lag Distance [mm]")
             ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
         ax.set_ylabel("Semivariance")
@@ -209,7 +208,7 @@ class CorrelationAnalyzer:
         max_range: int | float = None,
         increase_lag_after=None,
         increase_lag_by=3,
-        use_ideal_grid=False,
+        use_grid=False,
         weighted=False,
         deg=True,
     ):
@@ -226,16 +225,16 @@ class CorrelationAnalyzer:
             tolerance = np.deg2rad(tolerance)
 
         # the number of lags depends on the lag size, the angle and size of the grid
-        if use_ideal_grid:
+        if use_grid:
             if max_range is None:
-                max_x = self.ideal_grid[0].max()
-                max_y = self.ideal_grid[1].max()
+                max_x = self.position_grid[0].max()
+                max_y = self.position_grid[1].max()
                 max_range_at_angle = max_x * np.cos(angle) + max_y * np.sin(angle)
             else:
                 max_range_at_angle = max_range
 
-            # x_step = self.ideal_grid[0][0, 1] - self.ideal_grid[0][0, 0]
-            # y_step = self.ideal_grid[1][1, 0] - self.ideal_grid[1][0, 0]
+            # x_step = self.position_grid[0][0, 1] - self.position_grid[0][0, 0]
+            # y_step = self.position_grid[1][1, 0] - self.position_grid[1][0, 0]
             # step_at_angle = np.sqrt(x_step**2 + y_step**2) * np.cos(angle - np.pi / 4)
             if increase_lag_after is False or increase_lag_after is None:
                 num_lags_at_angle = max_range_at_angle / lag_step
@@ -289,7 +288,7 @@ class CorrelationAnalyzer:
                 angle=angle,
                 tolerance=tolerance,
                 max_range=max_range,
-                use_ideal_grid=use_ideal_grid,
+                use_grid=use_grid,
                 deg=False,
                 weighted=weighted,
             )
@@ -303,7 +302,7 @@ class CorrelationAnalyzer:
         tolerance=5,
         consider_both_signs=True,
         max_range=False,
-        use_ideal_grid=False,
+        use_grid=False,
         deg=True,
         weighted=False,
     ):
@@ -319,7 +318,7 @@ class CorrelationAnalyzer:
             Also a tolerance is added to the angle range to allow for some variation in the angle.
             tolerance (int or float): This is the tolerance in the angle range. The tolerance is added to the
             angle range to allow for some variation in the angle.
-            use_ideal_grid (bool, optional): If True, the ideal grid is used to calculate the semivariance.
+            use_grid (bool, optional): If True, the ideal grid is used to calculate the semivariance.
 
         Returns:
             float: The semivariance for the given lag and angle.
@@ -330,9 +329,9 @@ class CorrelationAnalyzer:
         elif isinstance(delta, (int, float)):
             delta = (delta * 0.5, delta * 0.5)
 
-        if use_ideal_grid:
-            x_coords = np.asarray(self.ideal_grid[0]).flatten()
-            y_coords = np.asarray(self.ideal_grid[1]).flatten()
+        if use_grid:
+            x_coords = np.asarray(self.position_grid[0]).flatten()
+            y_coords = np.asarray(self.position_grid[1]).flatten()
             # create a meshgrid of the x and y coordinates to get all possible combinations and speed up the calculation
             X1, X2 = np.meshgrid(x_coords, x_coords)
             Y1, Y2 = np.meshgrid(y_coords, y_coords)
@@ -394,25 +393,25 @@ class CorrelationAnalyzer:
             return np.mean(valid_semivariances) if valid_semivariances.size > 0 else 0
 
     def plot_points_with_distance_condition(
-        self, lag, delta, point_coords="central", ax=None, use_ideal_grid=False
+        self, lag, delta, point_coords="central", ax=None, use_grid=False, **kwargs
     ):
         """
         Plots the points that satisfy the distance condition relative to the central point.
         """
         if point_coords == "central":
             point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_ideal_grid:
+        if use_grid:
             central_point = (
-                self.ideal_grid[0][point_coords[0], point_coords[1]],
-                self.ideal_grid[1][point_coords[0], point_coords[1]],
+                self.position_grid[0][point_coords[0], point_coords[1]],
+                self.position_grid[1][point_coords[0], point_coords[1]],
             )
         else:
             central_point = point_coords
 
-        if use_ideal_grid:
+        if use_grid:
             x_coords, y_coords = (
-                np.asarray(self.ideal_grid[0]).flatten(),
-                np.asarray(self.ideal_grid[1]).flatten(),
+                np.asarray(self.position_grid[0]).flatten(),
+                np.asarray(self.position_grid[1]).flatten(),
             )
         else:
             x_coords, y_coords = np.indices(self.data.shape)
@@ -428,13 +427,38 @@ class CorrelationAnalyzer:
         else:
             fig = ax.get_figure()
 
-        ax.scatter(x_coords[valid_points], y_coords[valid_points], c="red", label="Valid Points")
-        ax.scatter(central_point[0], central_point[1], c="blue", label="Central Point")
+        def_kwargs = dict(
+            marker="o",
+            label="Valid Points",
+            c="red",
+        )
+
+        kwargs = {**def_kwargs, **kwargs}
+
+        # if color is passed in kwargs remove the c argument
+        if "color" in kwargs:
+            kwargs.pop("c")
+
+        ax.scatter(x_coords[valid_points], y_coords[valid_points], **kwargs)
+        ax.scatter(central_point[0], central_point[1], c="k", marker="x")
         ax.set_title(f"Lag Distance {lag}")
-        ax.set_xlim(0, self.data.shape[0])
-        ax.set_ylim(0, self.data.shape[1])
-        ax.set_xlabel("X Coordinate")
-        ax.set_ylabel("Y Coordinate")
+
+        if use_grid:
+            ax.set_xlabel("X [mm]")
+            ax.set_ylabel("Y [mm]")
+            ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            ax.yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            xlims = (self.position_grid[0].min(), self.position_grid[0].max())
+            ylims = (self.position_grid[1].min(), self.position_grid[1].max())
+
+        else:
+            ax.set_xlabel("X index")
+            ax.set_ylabel("Y index")
+            xlims = (0, self.data.shape[0])
+            ylims = (0, self.data.shape[1])
+
+        ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
         ax.legend()
         ax.grid(True)
 
@@ -447,7 +471,7 @@ class CorrelationAnalyzer:
         point_coords="central",
         ax=None,
         consider_both_signs=True,
-        use_ideal_grid=False,
+        use_grid=False,
         deg=True,
         **kwargs,
     ):
@@ -456,18 +480,18 @@ class CorrelationAnalyzer:
         """
         if point_coords == "central":
             point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_ideal_grid:
+        if use_grid:
             central_point = (
-                self.ideal_grid[0][point_coords[0], point_coords[1]],
-                self.ideal_grid[1][point_coords[0], point_coords[1]],
+                self.position_grid[0][point_coords[0], point_coords[1]],
+                self.position_grid[1][point_coords[0], point_coords[1]],
             )
         else:
             central_point = point_coords
 
-        if use_ideal_grid:
+        if use_grid:
             x_coords, y_coords = (
-                np.asarray(self.ideal_grid[0]).flatten(),
-                np.asarray(self.ideal_grid[1]).flatten(),
+                np.asarray(self.position_grid[0]).flatten(),
+                np.asarray(self.position_grid[1]).flatten(),
             )
         else:
             x_coords, y_coords = np.indices(self.data.shape)
@@ -480,14 +504,16 @@ class CorrelationAnalyzer:
             tolerance = np.deg2rad(tolerance)
 
         valid_points = np.abs(angles - angle) <= tolerance
+
         # consider also the opposite angle
         if consider_both_signs:
-            opposite_angle = (
-                angle - np.pi
-            )  # the input angle is between 0 and 2pi and the opposite angle is between -pi and pi
-            if opposite_angle == -np.pi:
-                opposite_angle = np.pi
-            valid_points |= np.abs(angles - opposite_angle) <= tolerance
+        #     opposite_angle = (
+        #         angle - np.pi
+        #     )  # the input angle is between 0 and 2pi and the opposite angle is between -pi and pi
+        #     if opposite_angle == -np.pi:
+        #         opposite_angle = np.pi
+            valid_points |= np.abs(angles - angle - np.pi) <= tolerance
+            valid_points |= np.abs(angles - angle + np.pi) <= tolerance
 
         if ax is None:
             fig = plt.figure(figsize=(8, 8))
@@ -495,15 +521,38 @@ class CorrelationAnalyzer:
         else:
             fig = ax.get_figure()
 
-        ax.scatter(
-            x_coords[valid_points], y_coords[valid_points], c="red", label="Valid Points", **kwargs
+        def_kwargs = dict(
+            marker="o",
+            label="Valid Points",
+            c="red",
         )
-        ax.scatter(central_point[0], central_point[1], c="blue", label="Central Point")
+
+        kwargs = {**def_kwargs, **kwargs}
+
+        # if color is passed in kwargs remove the c argument
+        if "color" in kwargs:
+            kwargs.pop("c")
+
+        ax.scatter(x_coords[valid_points], y_coords[valid_points], **kwargs)
+
+        if use_grid:
+            ax.set_xlabel("X [mm]")
+            ax.set_ylabel("Y [mm]")
+            ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            ax.yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            xlims = (self.position_grid[0].min(), self.position_grid[0].max())
+            ylims = (self.position_grid[1].min(), self.position_grid[1].max())
+
+        else:
+            ax.set_xlabel("X index")
+            ax.set_ylabel("Y index")
+            xlims = (0, self.data.shape[0])
+            ylims = (0, self.data.shape[1])
+
+        ax.scatter(central_point[0], central_point[1], c="k", marker="x")
         ax.set_title(f"Angle {np.rad2deg(angle):.0f}° ± {np.rad2deg(tolerance):.0f}°")
-        ax.set_xlim(0, self.data.shape[0])
-        ax.set_ylim(0, self.data.shape[1])
-        ax.set_xlabel("X Coordinate")
-        ax.set_ylabel("Y Coordinate")
+        ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
         ax.legend()
         ax.grid(True)
         return fig
@@ -517,7 +566,7 @@ class CorrelationAnalyzer:
         point_coords="central",
         both_signs=True,
         ax=None,
-        use_ideal_grid=False,
+        use_grid=False,
         deg=True,
         **kwargs,
     ):
@@ -533,10 +582,10 @@ class CorrelationAnalyzer:
             angle = np.deg2rad(angle)
             tolerance = np.deg2rad(tolerance)
 
-        if use_ideal_grid:
+        if use_grid:
             x_coords, y_coords = (
-                np.asarray(self.ideal_grid[0]).flatten(),
-                np.asarray(self.ideal_grid[1]).flatten(),
+                np.asarray(self.position_grid[0]).flatten(),
+                np.asarray(self.position_grid[1]).flatten(),
             )
         else:
             x_coords, y_coords = np.indices(self.data.shape)
@@ -544,10 +593,10 @@ class CorrelationAnalyzer:
 
         if point_coords == "central":
             point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_ideal_grid:
+        if use_grid:
             central_point = (
-                self.ideal_grid[0][point_coords[0], point_coords[1]],
-                self.ideal_grid[1][point_coords[0], point_coords[1]],
+                self.position_grid[0][point_coords[0], point_coords[1]],
+                self.position_grid[1][point_coords[0], point_coords[1]],
             )
         else:
             central_point = point_coords
