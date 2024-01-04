@@ -10,10 +10,17 @@ from my_packages.classes.aux_classes import Grid
 
 
 class CorrelationAnalyzer:
-    def __init__(self, data: np.ndarray, ideal_grid: Grid = None):
+    def __init__(self, data: np.ndarray, ideal_grid: Grid = None, normalize=True):
+        if normalize:
+            data = self.normalize_data(data)
         self.data = data
         self.ideal_grid = ideal_grid
         self.df = pd.DataFrame(data.T)
+    
+    @staticmethod 
+    def normalize_data(data: np.ndarray) -> np.ndarray:
+        return (data - data.min()) / (data.max() - data.min())
+        
 
     def get_correlation_matrix(self, axis: int = 0) -> np.ndarray:
         if axis == 0:
@@ -44,13 +51,58 @@ class CorrelationAnalyzer:
         label_x="x",
         label_y="y",
         use_ideal_grid=False,
+        rotated_imshow=False,
         ax=None,
         **kwargs,
     ):
         fig, ax = plt.subplots(1, 2, figsize=(12, 3), constrained_layout=True)
-        q = ax[0].imshow(
-            self.data, origin="lower", extent=[0, self.data.shape[1], 0, self.data.shape[0]]
-        )
+
+        if use_ideal_grid:
+            if rotated_imshow:
+                extent = [
+                    self.ideal_grid[1].min(),
+                    self.ideal_grid[1].max(),
+                    self.ideal_grid[0].min(),
+                    self.ideal_grid[0].max(),
+                ]
+            else:
+                extent = [
+                    self.ideal_grid[0].min(),
+                    self.ideal_grid[0].max(),
+                    self.ideal_grid[1].min(),
+                    self.ideal_grid[1].max(),
+                ]
+        else:
+            if rotated_imshow:
+                extent = [0, self.data.shape[1], 0, self.data.shape[0]]
+            else:
+                extent = [0, self.data.shape[0], 0, self.data.shape[1]]
+
+        # the imshow shows the index of the y axis in inverted order
+        data_to_show = self.data.T[::-1]
+
+        if rotated_imshow:
+            q = ax[0].imshow(data_to_show.T, origin="lower", extent=extent, **kwargs)
+        else:
+            q = ax[0].imshow(data_to_show, origin="lower", extent=extent, **kwargs)
+
+        if use_ideal_grid:
+            ax[0].xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            ax[0].yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
+            if rotated_imshow:
+                ax[0].set_ylabel("X [mm]")
+                ax[0].set_xlabel("Y [mm]")
+            else:
+                ax[0].set_ylabel("Y [mm]")
+                ax[0].set_xlabel("X [mm]")
+        else:
+            if rotated_imshow:
+                ax[0].set_ylabel("X index")
+                ax[0].set_xlabel("Y index")
+            else:
+                ax[0].set_ylabel("Y index")
+                ax[0].set_xlabel("X index")
+
         plt.colorbar(q, ax=ax[0], label="dBm")
         self.plot_variogram(
             lag_step=lag_stepx,
@@ -73,7 +125,7 @@ class CorrelationAnalyzer:
         ax[0].set_title("Scan")
         ax[1].set_title("Variogram")
         ax[1].legend()
-        
+
         fig.suptitle("XY Variograms")
         return fig
 
