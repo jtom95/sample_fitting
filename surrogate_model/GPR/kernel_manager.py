@@ -1,4 +1,4 @@
-from typing import Callable, Union
+from typing import Callable, Union, Optional
 import numpy as np
 from sklearn.gaussian_process.kernels import Kernel, Matern, ConstantKernel as C
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -29,12 +29,14 @@ class KernelManager:
         kernel_function: Callable = None,
         kernel_params: dict = None,
         non_normalize_params: dict = None,
+        max_range: Union[float, int] = None,
     ):
         self.kernel_function = kernel_function or self.DEFAULT_KERNEL_FUNCTION
         self.kernel_normalize_params = kernel_params or self.DEFAULT_KERNEL_PARAMS.copy()
         self.kernel_non_normalize_params = (
             non_normalize_params or self.DEFAULT_NON_NORMALIZE_PARAMS.copy()
         )
+        self.max_range = max_range
         self.scaler = None
 
     @property
@@ -48,7 +50,15 @@ class KernelManager:
             }
             return {**normalized_params, **self.kernel_non_normalize_params}
 
-    def set_scaler(self, X: np.ndarray, method: str = "standard"):
+    def set_scaler(self, scaler: Union[StandardScaler, MinMaxScaler]) -> "KernelManager":
+        """
+        Set the scaler to be used for normalization.
+        :param scaler: Scaler object.
+        """
+        self.scaler = scaler
+        return self
+    
+    def set_scaler_from_X(self, X: np.ndarray, method: str = "standard"):
         """
         Set the scaler based on the fitting data.
         :param X: Fitting data (2D array).
@@ -76,7 +86,7 @@ class KernelManager:
             return hyperparam / self.scaler.scale_[0]
         return hyperparam
 
-    def make_kernel(self, normalize: bool = True) -> Kernel:
+    def make_kernel(self, normalize: bool = True, max_range: Optional[float]=None) -> Kernel:
         """
         Create a kernel using the specified function and parameters.
         :param normalize: Whether to normalize the parameters.
@@ -84,9 +94,22 @@ class KernelManager:
         """
         if not normalize or not self.scaler:
             all_params = {**self.kernel_params, **self.kernel_non_normalize_params}
-            return self.kernel_function(**all_params)
+            kernel = self.kernel_function(**all_params)
 
-        return self.kernel_function(**self.kernel_params)
+        kernel = self.kernel_function(**self.kernel_params)
+        
+        if max_range is None:
+            max_range = self.max_range
+        
+        if max_range:
+            # normalize self.max_range
+            if self.scaler:
+                max_range = max_range / self.scaler.scale_[0]
+            else:
+                max_range = max_range
+            kernel *= StepKernel(max_range)
+            
+        return kernel
 
     def update_kernel_params(self, new_params: dict, normalize: bool = True) -> "KernelManager":
         """
