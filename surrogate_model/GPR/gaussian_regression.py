@@ -56,8 +56,11 @@ class GaussianRegressionModel(AbstractSampleModel):
                 kernel_params=kernel_kwargs,
                 non_normalize_params=kernel_non_normalize_hyperparams,
             )
-
     
+    @property
+    def surrogate_model(self):
+        return SurrogateModel(self)
+
     def update_kernel(self, base_kernel: Callable = None, non_normalize_hyperparams: bool = None, **kwargs)-> "GaussianRegressionModel":
         if non_normalize_hyperparams is None:
             if base_kernel is None:
@@ -88,7 +91,7 @@ class GaussianRegressionModel(AbstractSampleModel):
             self.scaler = None
         return self
 
-    def fit(self, X, y, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs) -> SurrogateModel:
+    def fit(self, X, y, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs) -> "GaussianRegressionModel":
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -114,7 +117,7 @@ class GaussianRegressionModel(AbstractSampleModel):
             **kwargs,
         )
         self.gp.fit(X_scaled, y)
-        return SurrogateModel(self)
+        return self
         
 
     def extract_theta(self):
@@ -125,7 +128,7 @@ class GaussianRegressionModel(AbstractSampleModel):
         self.kernel = self.kernel.clone_with_theta(params)
         return self.kernel
 
-    def fit_from_theta(self, X, y, theta: dict, K0: Kernel, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs)-> SurrogateModel:
+    def fit_from_theta(self, X, y, theta: dict, K0: Kernel, n_restarts_optimizer=None, alpha=None, max_range=None, **kwargs)-> "GaussianRegressionModel":
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -146,7 +149,7 @@ class GaussianRegressionModel(AbstractSampleModel):
             **kwargs,
         )
         self.gp.fit(X_scaled, y)
-        return SurrogateModel(self)
+        return self
 
     def predict_with_std(self, X) -> Tuple[np.ndarray, np.ndarray]:
         """
