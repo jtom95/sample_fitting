@@ -33,7 +33,7 @@ class SurrogateModel:
         predictions = predictions.reshape(shape2d)
         return Scan(predictions, grid=grid, freq=frequency, **kwargs)
 
-    def predict_scan(self, grid: Grid, frequency: float = None, **kwargs) -> Tuple[Scan, Scan]:
+    def predict_scan(self, grid: Grid, frequency: float = None, **kwargs) -> Scan:
         if frequency is None:
             frequency = -1
 

@@ -31,11 +31,17 @@ class KernelManager:
         non_normalize_params: dict = None,
         max_range: Union[float, int] = None,
     ):
-        self.kernel_function = kernel_function or self.DEFAULT_KERNEL_FUNCTION
-        self.kernel_normalize_params = kernel_params or self.DEFAULT_KERNEL_PARAMS.copy()
-        self.kernel_non_normalize_params = (
-            non_normalize_params or self.DEFAULT_NON_NORMALIZE_PARAMS.copy()
-        )
+        if kernel_params is None:
+            kernel_params = self.DEFAULT_KERNEL_PARAMS.copy()
+        if non_normalize_params is None:
+            non_normalize_params = self.DEFAULT_NON_NORMALIZE_PARAMS.copy()
+        if kernel_function is None:
+            kernel_function = self.DEFAULT_KERNEL_FUNCTION
+        
+        self.kernel_function = kernel_function
+        self.kernel_normalize_params = kernel_params
+        self.kernel_non_normalize_params = non_normalize_params
+        
         self.max_range = max_range
         self.scaler = None
 

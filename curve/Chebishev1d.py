@@ -4,6 +4,8 @@ from collections import namedtuple
 import numpy as np
 import numpy.polynomial.chebyshev as cheb
 
+from .abstract_curve_fitter import AbstractCurveFitter
+
 Normalization_Info = namedtuple("Normalization_Info", ["x_min", "x_max", "y_min", "y_max"])
 
 
@@ -55,7 +57,7 @@ class Normalizer:
         )
 
 
-class ChebyshevFitter1D:
+class ChebyshevFitter1D(AbstractCurveFitter):
     """
     Class to perform vector fitting using Chebyshev basis.
 
@@ -80,16 +82,36 @@ class ChebyshevFitter1D:
         """
 
         if bounds is not None:
-            self.x_min = bounds[0]
-            self.x_max = bounds[1]
+            self._x_min = bounds[0]
+            self._x_max = bounds[1]
         else:
-            self.x_min = None
-            self.x_max = None
+            self._x_min = None
+            self._x_max = None
 
         self.x = None
         self.y = None
         self.coefficients = None
         self.normalizer = None
+    
+    @property
+    def x_min(self):
+        if self._x_min is None:
+            if self.x is None:
+                return None
+            else:
+                return np.min(self.x)
+        else:
+            return self._x_min
+    
+    @property
+    def x_max(self):
+        if self._x_max is None:
+            if self.x is None:
+                return None
+            else:
+                return np.max(self.x)
+        else:
+            return self._x_max
 
     def load_data(self, positions: np.ndarray, values: np.ndarray):
         """
@@ -99,7 +121,7 @@ class ChebyshevFitter1D:
             positions (np.ndarray): The positions of the data points.
             values (np.ndarray): The values of the data points.
         """
-
+        self.check_data_1d(positions, values)
         self.x = positions
         self.y = values
 
@@ -117,19 +139,18 @@ class ChebyshevFitter1D:
             ChebyshevFitter1D: The ChebyshevFitter1D object with the normalized data.
         """
 
-        x_min = np.min(self.x) if self.x_min is None else self.x_min
-        x_max = np.max(self.x) if self.x_max is None else self.x_max
-        y_min = np.min(self.y)
-        y_max = np.max(self.y)
 
-        norm_info = Normalization_Info(x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max)
+        y_min = np.min(self.y)
+        y_max = np.max(self.y)        
+
+        norm_info = Normalization_Info(x_min=self.x_min, x_max=self.x_max, y_min=y_min, y_max=y_max)
 
         self.normalizer = Normalizer.from_normalization_info(norm_info)
 
         # normalize the input data
-        self.x, self.y = self.normalizer.normalize(self.x, self.y)
+        self.x_norm, self.y_norm = self.normalizer.normalize(self.x, self.y)
 
-        return self
+        return self.x_norm, self.y_norm
 
     @staticmethod
     def chebyshev_basis(x: np.ndarray, order: int = 10):
@@ -165,18 +186,28 @@ class ChebyshevFitter1D:
             Tuple[np.ndarray, normalization_info]: A tuple containing the Chebyshev coefficients
             and the normalization information.
         """
-        self.normalize()
+        x_norm, y_norm = self.normalize()
 
-        basis_matrix = self.chebyshev_basis(self.x, order)
+        basis_matrix = self.chebyshev_basis(x_norm, order)
 
         # Use least squares regression to compute the coefficients
-        self.coefficients, _, _, _ = np.linalg.lstsq(basis_matrix, self.y, rcond=None)
+        self.coefficients, _, _, _ = np.linalg.lstsq(basis_matrix, y_norm, rcond=None)
 
         # Return the coefficients and the normalization information
         return (self.coefficients, self.normalizer.get_normalization_info())
+    
+    def predict(self, x):
+        if not hasattr(self, "coefficients"):
+            raise ValueError("The model is not fitted yet. Please call fit() first.")
+        if not hasattr(self, "normalizer"):
+            raise ValueError("The model is not fitted yet. Please call fit() first.")
+        coeffs = self.coefficients
+        norm_info = self.normalizer.get_normalization_info()
+        
+        return self.cls_predict(x, coeffs, norm_info)
 
     @classmethod
-    def predict(cls, positions, coefficients: np.ndarray, normalization_info: Normalization_Info):
+    def cls_predict(cls, positions, coefficients: np.ndarray, normalization_info: Normalization_Info):
         """
         Predicts the y value for a given x value using the fitted Chebyshev basis functions.
 

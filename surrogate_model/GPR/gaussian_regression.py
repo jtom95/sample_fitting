@@ -36,8 +36,8 @@ class GaussianRegressionModel(AbstractSampleModel):
         n_restarts_optimizer: int = 10,
         alpha: float = 1e-10,
         kernel_base_function: Callable = None,
-        kernel_kwargs: dict = {},
-        kernel_non_normalize_hyperparams: dict = {},
+        kernel_kwargs: dict = None,
+        kernel_non_normalize_hyperparams: dict = None,
     ):
         if isinstance(units, str):
             units = DistanceUnits[units]
