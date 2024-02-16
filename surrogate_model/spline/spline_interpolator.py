@@ -50,8 +50,7 @@ class Interpolator(AbstractSampleModel):
     def fill_nan(array_1d: np.ndarray) -> np.ndarray:
         series = pd.Series(array_1d)
         # fill the nan values with the closest non-nan value
-        series = series.fillna(method="ffill")
-        series = series.fillna(method="bfill")
+        series = series.bfill()
         return series.values
     
     def predict(self, X):

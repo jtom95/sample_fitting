@@ -1,7 +1,8 @@
 from typing import Tuple, Optional
-
+import logging
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from .abstract_sample_model import AbstractSampleModel
@@ -9,6 +10,7 @@ from .abstract_sample_model import AbstractSampleModel
 from my_packages.classes.aux_classes import Grid
 from my_packages.EM_fields.scans import Scan
 
+logger = logging.getLogger("Surrogate Model")
 
 class SurrogateModel:
     def __init__(self, model: AbstractSampleModel):
@@ -42,6 +44,13 @@ class SurrogateModel:
         points2d = points[:, 0:2]
         predictions = self.predict(points2d)
         predictions = predictions.reshape(shape2d)
+        # check if there are any NaN values
+        if np.isnan(predictions).any():
+            # Backfill any NaN values
+            logger.info("Backfilling and Forward NaN values using pandas. Both are applied to handle edge cases")
+            predictions_df = pd.DataFrame(predictions).bfill(axis=0).ffill(axis=0)  # For column-wise backfill, use axis=0
+            # convert back to numpy array
+            predictions = predictions_df.to_numpy()
         return Scan(predictions, grid=grid, freq=frequency, **kwargs)
 
     def score(self, X, y):
@@ -74,7 +83,7 @@ class SurrogateModel:
             n_axes = 3 if std_scan is not None else 2
             def_height = 3 if std_scan is not None else 3
             def_width = 10 if std_scan is not None else 8
-            
+
             fig, ax = plt.subplots(1, n_axes, figsize=(def_width, def_height), constrained_layout=True)
         else:
             fig = ax[0].get_figure()
