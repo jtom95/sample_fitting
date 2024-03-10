@@ -17,9 +17,10 @@ class SurrogateModel:
         if not isinstance(model, AbstractSampleModel):
             raise TypeError("model must be an instance of Model")
         self.model = model
+        self.logger = logger
 
-    def predict(self, X) -> np.ndarray:
-        return self.model.predict(X)
+    def predict(self, X, **kwargs) -> np.ndarray:
+        return self.model.predict(X, **kwargs)
 
     def prediction_std(self, X) -> np.ndarray:
         return self.model.prediction_std(X)
@@ -52,6 +53,33 @@ class SurrogateModel:
             # convert back to numpy array
             predictions = predictions_df.to_numpy()
         return Scan(predictions, grid=grid, freq=frequency, **kwargs)
+
+
+    def predict_scan_and_std(self, grid: Grid, frequency: float = None, **kwargs) -> Tuple[Scan, Scan]:
+        """
+        This method predicts scan and std with a single call to the surrogate model.
+        However, it only works if the model is of type GaussianProcessRegressor.
+        """
+        if not hasattr(self.model, "fit_from_theta"):
+            self.logger.warning("This method is only available for GaussianProcessRegressor models")
+            return self.predict_scan(grid, frequency, **kwargs), None
+
+        if frequency is None:
+            frequency = -1
+        
+        shape2d = (grid.shape[1], grid.shape[2])
+        points = grid.create_position_matrix()
+        points2d = points[:, 0:2]
+        predictions, std = self.model.predict(points2d, return_std=True)
+        
+        predictions = predictions.reshape(shape2d)
+        std = std.reshape(shape2d)
+        
+        prediction_scan = Scan(predictions, grid=grid, freq=frequency, **kwargs)
+        std_scan = Scan(std, grid=grid, freq=frequency, **kwargs)
+        
+        return prediction_scan, std_scan
+
 
     def score(self, X, y):
         # calculate the score as the
