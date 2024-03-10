@@ -52,6 +52,7 @@ class GaussianRegressionModel(AbstractSampleModel):
         self.configs = configs    
 
         self._set_normalization_scaler(method=configs.normalization_method)
+        self._set_label_scaler()
 
         if configs.kernel_base_function is None:
             self.kernelM = KernelManager()
@@ -99,7 +100,7 @@ class GaussianRegressionModel(AbstractSampleModel):
     @property
     def surrogate_model(self):
         return SurrogateModel(self)
-    
+
     def update_configs_properties(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self.configs, key, value)
@@ -140,6 +141,9 @@ class GaussianRegressionModel(AbstractSampleModel):
         }
         self.scaler = scalers.get(method)
 
+    def _set_label_scaler(self):
+        self.label_scaler = MinMaxScaler()
+
     def _preprocess_data(self, X: np.ndarray, fit=False) -> np.ndarray:
         X = X / self.units.value
         if self.scaler:
@@ -147,7 +151,7 @@ class GaussianRegressionModel(AbstractSampleModel):
                 return self.scaler.fit_transform(X)
             else:
                 return self.scaler.transform(X)
-            
+
     def fit(self, X, y, **kwargs) -> "GaussianRegressionModel":
         """
         Fit the Gaussian Process model.
@@ -156,6 +160,7 @@ class GaussianRegressionModel(AbstractSampleModel):
         """
 
         # change the units of the spatial coordinates
+        y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
         X_scaled = self._preprocess_data(X, fit=True)
         self.kernelM.set_scaler(self.scaler)
         self.kernel = self.kernelM.make_kernel(
@@ -169,7 +174,7 @@ class GaussianRegressionModel(AbstractSampleModel):
             alpha=self.alpha,
             **kwargs,
         )
-        self.gp.fit(X_scaled, y)
+        self.gp.fit(X_scaled, y_scaled)
         return self
 
     def predict(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
@@ -181,7 +186,11 @@ class GaussianRegressionModel(AbstractSampleModel):
                  If return_std is True, also returns the standard deviation of the predictions.
         """
         X_scaled = self._preprocess_data(X, fit=False)
-        return self.gp.predict(X_scaled, return_std=return_std)
+        y_predicted = self.gp.predict(X_scaled, return_std=return_std)
+        if return_std:
+            y_predicted, std_devs = y_predicted
+            return self.label_scaler.inverse_transform(y_predicted.reshape(-1, 1)), std_devs / self.label_scaler.scale_
+        return self.label_scaler.inverse_transform(y_predicted.reshape(-1, 1))
 
     def extract_theta(self):
         return self.gp.kernel_.theta
@@ -199,6 +208,7 @@ class GaussianRegressionModel(AbstractSampleModel):
         """
         # change the units of the spatial coordinates
         X_scaled = self._preprocess_data(X, fit=True)
+        y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
         self.kernel = self.set_kernel_theta(theta, K0)
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
@@ -206,9 +216,9 @@ class GaussianRegressionModel(AbstractSampleModel):
             alpha=self.alpha,
             **kwargs
         )
-        self.gp.fit(X_scaled, y)
-        return self
 
+        self.gp.fit(X_scaled, y_scaled)
+        return self
 
     def prediction_std(self, X) -> np.ndarray:
         """
@@ -217,10 +227,12 @@ class GaussianRegressionModel(AbstractSampleModel):
         :return: Predicted field values at these coordinates and the std of the model.
         """
         # change the units of the spatial coordinates
-        X = X / self.units.value
-        X = self.scaler.transform(X)
-        return self.gp.predict(X, return_std=True)[1]
-    
+        X = self._preprocess_data(X, fit=False)
+        _, std = self.gp.predict(X, return_std=True)[1]
+
+        std = std / self.label_scaler.scale_
+        return std
+
     def get_kernel_params(self) -> dict:
         """
         Retrieve the kernel parameters (length scales and bounds).
@@ -236,11 +248,16 @@ class GaussianRegressionModel(AbstractSampleModel):
                 else:
                     length_scale_bounds.append(param_value)
 
+            # include the ConstantKernel parameter
+            if 'constant_value' in param_name and 'bounds' not in param_name:
+                constant_value = param_value**0.5
+
         if self.scaler:
             length_scales = np.asarray(length_scales) * self.scaler.scale_[0]
             length_scale_bounds = np.asarray(length_scale_bounds) * self.scaler.scale_[0]
 
         return {
+            'constant_value': constant_value,   
             'length_scales': length_scales,
             'length_scale_bounds': length_scale_bounds,
         }

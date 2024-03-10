@@ -38,8 +38,8 @@ class SurrogateModel:
 
     def predict_scan(self, grid: Grid, frequency: float = None, **kwargs) -> Scan:
         if frequency is None:
-            frequency = -1
-
+            frequency = -1     
+        
         shape2d = (grid.shape[1], grid.shape[2])
         points = grid.create_position_matrix()
         points2d = points[:, 0:2]
@@ -52,8 +52,9 @@ class SurrogateModel:
             predictions_df = pd.DataFrame(predictions).bfill(axis=0).ffill(axis=0)  # For column-wise backfill, use axis=0
             # convert back to numpy array
             predictions = predictions_df.to_numpy()
+            
+        predictions = predictions.reshape(shape2d)
         return Scan(predictions, grid=grid, freq=frequency, **kwargs)
-
 
     def predict_scan_and_std(self, grid: Grid, frequency: float = None, **kwargs) -> Tuple[Scan, Scan]:
         """
@@ -66,20 +67,18 @@ class SurrogateModel:
 
         if frequency is None:
             frequency = -1
-        
+
         shape2d = (grid.shape[1], grid.shape[2])
         points = grid.create_position_matrix()
         points2d = points[:, 0:2]
         predictions, std = self.model.predict(points2d, return_std=True)
-        
+
         predictions = predictions.reshape(shape2d)
         std = std.reshape(shape2d)
-        
+
         prediction_scan = Scan(predictions, grid=grid, freq=frequency, **kwargs)
         std_scan = Scan(std, grid=grid, freq=frequency, **kwargs)
-        
         return prediction_scan, std_scan
-
 
     def score(self, X, y):
         # calculate the score as the

@@ -8,7 +8,7 @@ from .custom_scikit_kernel import StepKernel
 
 class KernelManager:
     DEFAULT_KERNEL_FUNCTION: Callable[[float, tuple, float], Kernel] = staticmethod(
-        lambda length_scale, length_scale_bounds, nu: C(1.0, (1e-3, 1e3))
+        lambda length_scale, length_scale_bounds, nu: C(0.5, (1e-3, 1.0))
         * Matern(
             length_scale=length_scale,
             length_scale_bounds=length_scale_bounds,
@@ -16,8 +16,8 @@ class KernelManager:
         )
     )
     DEFAULT_KERNEL_PARAMS = {
-        "length_scale": 1.0,
-        "length_scale_bounds": (1e-3, 1e3),
+        "length_scale": 5.0,
+        "length_scale_bounds": (0.1, 100),
     }
 
     DEFAULT_NON_NORMALIZE_PARAMS = {
