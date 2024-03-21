@@ -1,718 +1,182 @@
-from typing import Tuple
+from typing import Tuple, Optional, List
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-from my_packages.auxiliary_plotting_functions.composite_plots import stack_figures
+# from my_packages.auxiliary_plotting_functions.composite_plots import stack_figures
 from my_packages.classes.aux_classes import Grid
 
+from ._correlation_plotter_mixin import CorrelationPlotterMixin
 
-class CorrelationAnalyzer:
-    def __init__(self, data: np.ndarray, position_grid: Grid = None, normalize=True):
+class CorrelationAnalyzer(CorrelationPlotterMixin):
+    """
+    A class for analyzing correlations in 3D data.
+
+    Attributes:
+        data (numpy.ndarray): The 3D data array with dimensions x, y, f.
+        position_grid (Grid, optional): The position grid corresponding to the data.
+        frequency_indices (List[int]): The list of frequency indices to analyze.
+    """
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        position_grid: Optional[Grid] = None,
+        frequency_indices: Optional[List[int]] = None,
+        normalize: bool = True,
+        absolute_correlation_values: bool = True
+    ):
+        """
+        Initialize the CorrelationAnalyzer.
+
+        Args:
+            data (numpy.ndarray): The 3D data array with dimensions x, y, f.
+            position_grid (Grid, optional): The position grid corresponding to the data. Defaults to None.
+            frequency_indices (List[int], optional): The list of frequency indices to analyze. Defaults to None.
+            normalize (bool, optional): Whether to normalize the data. Defaults to True.
+        """
         if normalize:
-            data = self.normalize_data(data)
-        self.data = data
+            data = self._normalize_data(data)
+        if np.ndim(data) == 2:
+            self.data = data[:, :, np.newaxis]  
+        elif np.ndim(data) == 3:
+            self.data = data
+        else:
+            raise ValueError("Data must be 2D or 3D.")
         self.position_grid = position_grid
-        self.df = pd.DataFrame(data.T)
+        self.frequency_indices = (
+            frequency_indices if frequency_indices is not None else list(range(data.shape[2]))
+        )
+
+        self.frequency_indices_order_dict = {
+            freq_index: ii for ii, freq_index in enumerate(self.frequency_indices)
+        }
+        self.absolute_correlation_values = absolute_correlation_values
+
+        self.x_correlation_matrix = self.get_correlation_matrix(axis=0)
+        self.y_correlation_matrix = self.get_correlation_matrix(axis=1)
+        self.x_mean_matrix = self.get_mean_matrix(axis=0)
+        self.y_mean_matrix = self.get_mean_matrix(axis=1)
+
+    @property
+    def combined_correlation_matrix(self) -> np.ndarray:
+        combined_corr_list = []
+        for ii, f_index in enumerate(self.frequency_indices):
+            combined_corr = self.get_combined_correlation_matrix(index=f_index)
+            combined_corr_list.append(combined_corr)
+        return np.stack(combined_corr_list, axis=-1)
+
+
+    def get_combined_correlation_matrix(self, index=None):
+        if index is None:
+            index = 0
+        else:
+            index = self.frequency_indices_order_dict.get(index, None)
+            if index is None:
+                raise ValueError("The frequency index is not in the list of frequency indices.")
+
+        x_corr = self.x_correlation_matrix[..., index]
+        y_corr = self.y_correlation_matrix[..., index]
+
+        # Get the maximum size of the matrices
+        max_size = max(x_corr.shape[0], y_corr.shape[0])
+
+        # Pad the matrices with zeros to make them the same size
+        x_corr_padded = np.pad(
+            x_corr,
+            ((0, max_size - x_corr.shape[0]), (0, max_size - x_corr.shape[1])),
+            mode="constant",
+            constant_values=np.nan
+        )
+        y_corr_padded = np.pad(
+            y_corr,
+            ((0, max_size - y_corr.shape[0]), (0, max_size - y_corr.shape[1])),
+            mode="constant",
+            constant_values=np.nan
+        )
+
+        # Create the combined correlation matrix
+        combined_corr = np.triu(y_corr_padded) + np.tril(x_corr_padded)
+        np.fill_diagonal(combined_corr, 0.5 * (np.diag(x_corr_padded) + np.diag(y_corr_padded)))
+
+        return combined_corr
+
+    @property
+    def data_at_frequencies(self) -> np.ndarray:
+        """Filter the data to include only the slices corresponding to the specified frequency indices."""
+        return self.data[:, :, self.frequency_indices]
 
     @staticmethod
-    def normalize_data(data: np.ndarray) -> np.ndarray:
+    def _normalize_data(data: np.ndarray) -> np.ndarray:
+        """
+        Normalize the data to the range [0, 1].
+
+        Args:
+            data (numpy.ndarray): The input data.
+
+        Returns:
+            numpy.ndarray: The normalized data.
+        """
         return (data - data.min()) / (data.max() - data.min())
 
     def get_correlation_matrix(self, axis: int = 0) -> np.ndarray:
-        if axis == 0:
-            return self.df.corr()
-        elif axis == 1:
-            return self.df.T.corr()
-        else:
-            raise ValueError("axis must be 0 or 1")
-
-    def get_mean_matrix(self, axis: int = 0) -> np.ndarray:
-        mean_axis = self.df.max(axis=axis).to_numpy()
-
-        N = len(mean_axis)
-        mean_matrix = np.zeros((N, N))
-        for ii in range(N):
-            for jj in range(N):
-                mean_matrix[ii, jj] = np.mean([mean_axis[ii], mean_axis[jj]])
-        return mean_matrix
-
-    def plot_xy_variograms(
-        self,
-        lag_stepx=1,
-        lag_stepy=1,
-        max_rangex=None,
-        max_rangey=None,
-        tolerancex=5,
-        tolerancey=5,
-        label_x="x",
-        label_y="y",
-        use_grid=False,
-        rotated_imshow=False,
-        ax=None,
-        **kwargs,
-    ):
-        fig, ax = plt.subplots(1, 2, figsize=(12, 3), constrained_layout=True)
-
-        if use_grid:
-            if rotated_imshow:
-                extent = [
-                    self.position_grid[1].min(),
-                    self.position_grid[1].max(),
-                    self.position_grid[0].min(),
-                    self.position_grid[0].max(),
-                ]
-            else:
-                extent = [
-                    self.position_grid[0].min(),
-                    self.position_grid[0].max(),
-                    self.position_grid[1].min(),
-                    self.position_grid[1].max(),
-                ]
-        else:
-            if rotated_imshow:
-                extent = [0, self.data.shape[1], 0, self.data.shape[0]]
-            else:
-                extent = [0, self.data.shape[0], 0, self.data.shape[1]]
-
-        # the imshow shows the index of the y axis in inverted order
-        data_to_show = self.data.T[::-1]
-
-        if rotated_imshow:
-            q = ax[0].imshow(data_to_show.T, origin="lower", extent=extent, **kwargs)
-        else:
-            q = ax[0].imshow(data_to_show, origin="lower", extent=extent, **kwargs)
-
-        if use_grid:
-            ax[0].xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            ax[0].yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            if rotated_imshow:
-                ax[0].set_ylabel("X [mm]")
-                ax[0].set_xlabel("Y [mm]")
-            else:
-                ax[0].set_ylabel("Y [mm]")
-                ax[0].set_xlabel("X [mm]")
-        else:
-            if rotated_imshow:
-                ax[0].set_ylabel("X index")
-                ax[0].set_xlabel("Y index")
-            else:
-                ax[0].set_ylabel("Y index")
-                ax[0].set_xlabel("X index")
-
-        plt.colorbar(q, ax=ax[0], label="dBm")
-        self.plot_variogram(
-            lag_step=lag_stepx,
-            angle="x",
-            max_range=max_rangex,
-            tolerance=tolerancex,
-            ax=ax[1],
-            label=label_x,
-            use_grid=use_grid,
-        )
-        self.plot_variogram(
-            lag_step=lag_stepy,
-            angle="y",
-            max_range=max_rangey,
-            tolerance=tolerancey,
-            ax=ax[1],
-            label=label_y,
-            use_grid=use_grid,
-        )
-        ax[0].set_title("Scan")
-        ax[1].set_title("Variogram")
-        ax[1].legend()
-
-        fig.suptitle("XY Variograms")
-        return fig
-
-    def plot_variogram(
-        self,
-        lag_step=1,
-        angle=None,
-        tolerance=5,
-        ax: plt.Axes = None,
-        increase_lag_after=None,
-        increase_lag_by=3,
-        max_range=None,
-        use_grid=False,
-        weighted=False,
-        deg=True,
-        **kwargs,
-    ):
         """
-        Plots the variogram for the given parameters.
+        Calculate the correlation matrix along the specified axis for each frequency index.
 
         Args:
-            lag (int, optional): The starting lag distance. Defaults to 1.
-            angle (float | int | str, optional): The angle for directional variogram. Defaults to "x".
-            tolerance (float, optional): The angular tolerance in degrees. Defaults to 0.5.
-            use_grid (bool, optional): Whether to use an ideal grid. Defaults to False.
-            deg (bool, optional): Whether the angle is in degrees. Defaults to False.
-        """
-
-        # Generate semivariances and lags
-        semivariances = []
-        lags = []
-        current_lag = lag_step
-        for semivariance in self.semivariances_generator(
-            lag_step=lag_step,
-            angle=angle,
-            tolerance=tolerance,
-            max_range=max_range,
-            increase_lag_after=increase_lag_after,
-            increase_lag_by=increase_lag_by,
-            use_grid=use_grid,
-            weighted=weighted,
-            deg=deg,
-        ):
-            semivariances.append(semivariance)
-            lags.append(current_lag)
-            if increase_lag_after is False or increase_lag_after is None:
-                current_lag += lag_step
-            else:
-                if len(lags) < increase_lag_after:
-                    current_lag += lag_step
-                else:
-                    current_lag += lag_step * increase_lag_by
-        # Plotting the variogram
-        if ax is None:
-            fig = plt.figure(figsize=(10, 3))
-            ax = fig.add_subplot(111)
-        else:
-            fig = ax.get_figure()
-
-        ## kwargs for the plot
-        default_kwargs = dict(
-            marker="o",
-        )
-
-        kwargs = {**default_kwargs, **kwargs}
-
-        ax.plot(lags, semivariances, **kwargs)
-        ax.set_title(f"Variogram - Angle: {angle}")
-        if use_grid:
-            ax.set_xlabel("Lag Distance [mm]")
-            ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-        ax.set_ylabel("Semivariance")
-        ax.grid(True)
-        return fig
-
-    def semivariances_generator(
-        self,
-        lag_step=1,
-        angle: float | int | str = None,
-        tolerance=5,
-        max_range: int | float = None,
-        increase_lag_after=None,
-        increase_lag_by=3,
-        use_grid=False,
-        weighted=False,
-        deg=True,
-    ):
-        if isinstance(angle, str):
-            if angle.capitalize() == "X":
-                angle = 0
-            elif angle.capitalize() == "Y":
-                angle = 90 if deg else np.pi / 2
-            else:
-                raise ValueError("angle must be 'x', 'y' or a float")
-
-        if deg and angle is not None:
-            angle = np.deg2rad(angle)
-            tolerance = np.deg2rad(tolerance)
-
-        # the number of lags depends on the lag size, the angle and size of the grid
-        if use_grid:
-            if max_range is None:
-                max_x = self.position_grid[0].max()
-                max_y = self.position_grid[1].max()
-                max_range_at_angle = max_x * np.cos(angle) + max_y * np.sin(angle)
-            else:
-                max_range_at_angle = max_range
-
-            # x_step = self.position_grid[0][0, 1] - self.position_grid[0][0, 0]
-            # y_step = self.position_grid[1][1, 0] - self.position_grid[1][0, 0]
-            # step_at_angle = np.sqrt(x_step**2 + y_step**2) * np.cos(angle - np.pi / 4)
-            if increase_lag_after is False or increase_lag_after is None:
-                num_lags_at_angle = max_range_at_angle / lag_step
-                num_lags_at_angle = int(np.ceil(num_lags_at_angle))
-            else:
-                # the first increase_lag_after lags are calculated with the given lag
-                num_with_min_lag = max_range_at_angle / lag_step
-                after_min_lag = num_with_min_lag - increase_lag_after
-                # after the first increase_lag_after lags, the lag is set to increase_lag_by lag
-                num_with_increased_lag = after_min_lag / increase_lag_by
-                num_lags_at_angle = increase_lag_after + num_with_increased_lag
-                num_lags_at_angle = int(np.ceil(num_lags_at_angle))
-
-        else:
-            N, M = self.data.shape
-            if max_range is None:
-                # max range is equal to N for angle 0 and to M for angle 90
-                max_range_at_angle = N * np.cos(angle) + M * np.sin(angle)
-            else:
-                max_range_at_angle = max_range
-
-            if increase_lag_after is False or increase_lag_after is None:
-                num_lags_at_angle = max_range_at_angle / lag_step
-                num_lags_at_angle = int(np.ceil(num_lags_at_angle))
-            else:
-                # the first increase_lag_after lags are calculated with the given lag
-                num_with_min_lag = max_range_at_angle / lag_step
-                after_min_lag = num_with_min_lag - increase_lag_after
-                # after the first increase_lag_after lags, the lag is set to increase_lag_by lag
-                num_with_increased_lag = after_min_lag / increase_lag_by
-                num_lags_at_angle = increase_lag_after + num_with_increased_lag
-                num_lags_at_angle = int(np.ceil(num_lags_at_angle))
-
-        for i in range(num_lags_at_angle):
-            if increase_lag_after is not False and increase_lag_after is not None:
-                if i < increase_lag_after:
-                    lag_at_step = lag_step * (i + 1)
-                    delta = (lag_step * 0.5, lag_step * 0.5)
-                else:
-                    lag_at_step = (
-                        increase_lag_by * lag_step * (i + 1 - increase_lag_after)
-                        + lag_step * increase_lag_after
-                    )
-                    delta = (increase_lag_by * lag_step * 0.5, increase_lag_by * lag_step * 0.5)
-            else:
-                lag_at_step = lag_step * (i + 1)
-                delta = (lag_step * 0.5, lag_step * 0.5)
-            semivariance = self.calculate_semivariance(
-                lag=lag_at_step,
-                delta=delta,
-                angle=angle,
-                tolerance=tolerance,
-                max_range=max_range,
-                use_grid=use_grid,
-                deg=False,
-                weighted=weighted,
-            )
-            yield semivariance
-
-    def calculate_semivariance(
-        self,
-        lag,
-        delta: Tuple[float, float] = None,
-        angle=None,
-        tolerance=5,
-        consider_both_signs=True,
-        max_range=False,
-        use_grid=False,
-        deg=True,
-        weighted=False,
-    ):
-        """
-        Calculates the semivariance for a given lag and angle. The semivariance is calculated as the
-        mean of the squared differences between all points that are within the lag and angle range.
-        Args:
-            lag (int or float): This is the distance between the points that are compared.
-            Any points that are within the lag range will be compared. The results are then averaged.
-            angle (int or float): This is the angle between the points that are compared.
-            Any points that are within the angle range will be compared. The results are then averaged.
-            The angle is measured from the positive x-axis and is positive in the counter-clockwise direction.
-            Also a tolerance is added to the angle range to allow for some variation in the angle.
-            tolerance (int or float): This is the tolerance in the angle range. The tolerance is added to the
-            angle range to allow for some variation in the angle.
-            use_grid (bool, optional): If True, the ideal grid is used to calculate the semivariance.
+            axis (int, optional): The axis along which to calculate the correlation. Defaults to 0.
 
         Returns:
-            float: The semivariance for the given lag and angle.
+            numpy.ndarray: The correlation matrices for each frequency index.
+
+        Raises:
+            ValueError: If the axis is not 0 or 1.
         """
+        if axis not in [0, 1]:
+            raise ValueError("Axis must be 0 or 1.")
 
-        if delta is None:
-            delta = (lag * 0.5, lag * 0.5)
-        elif isinstance(delta, (int, float)):
-            delta = (delta * 0.5, delta * 0.5)
-
-        if use_grid:
-            x_coords = np.asarray(self.position_grid[0]).flatten()
-            y_coords = np.asarray(self.position_grid[1]).flatten()
-            # create a meshgrid of the x and y coordinates to get all possible combinations and speed up the calculation
-            X1, X2 = np.meshgrid(x_coords, x_coords)
-            Y1, Y2 = np.meshgrid(y_coords, y_coords)
-        else:
-            X_ind, Y_ind = np.indices(self.data.shape)
-            x_coords = X_ind.flatten()
-            y_coords = Y_ind.flatten()
-            # create a meshgrid of the x and y coordinates to get all possible combinations and speed up the calculation
-            X1, X2 = np.meshgrid(x_coords, x_coords)
-            Y1, Y2 = np.meshgrid(y_coords, y_coords)
-
-        # Calculate distances and angles between all pairs
-        distances = np.sqrt((X1 - X2) ** 2 + (Y1 - Y2) ** 2)
-
-        valid_pairs = (distances > (lag - delta[0])) & (distances <= (lag + delta[1]))
-
-        if max_range:
-            valid_pairs &= distances <= max_range
-
-        if angle is not None:
-            if deg:
-                angle = np.deg2rad(angle)
-                tolerance = np.deg2rad(tolerance)
-
-            # set the angle and tolerance to be between 0 and pi
-            if not 0 <= angle < np.pi:
-                raise ValueError("angle must be between 0 and 180 degrees")
-            if not 0 <= tolerance < np.pi:
-                raise ValueError("tolerance must be between 0 and 180 degrees")
-
-            if angle == 0:
-                angle = np.pi
-
-            angles = np.arctan2(Y2 - Y1, X2 - X1)
-            valid_angle_pairs = np.abs(angles - angle) <= tolerance
-            if consider_both_signs:
-                opposite_angle = angle - np.pi
-                if opposite_angle == -np.pi:
-                    opposite_angle = np.pi
-                valid_angle_pairs |= np.abs(angles - opposite_angle) <= tolerance
-
-            valid_pairs &= valid_angle_pairs
-
-        values = self.data.flatten()
-        D1, D2 = np.meshgrid(values, values)
-        valid_semivariances = (D1[valid_pairs] - D2[valid_pairs]) ** 2
-
-        if weighted:
-            # Use the average value of the pair of points as weights
-            weights = (np.abs(D1[valid_pairs]) + np.abs(D2[valid_pairs])) / 2
-            weighted_semivariances = valid_semivariances * weights
-            return (
-                np.average(weighted_semivariances, weights=weights)
-                if weighted_semivariances.size > 0
-                else 0
-            )
-        else:
-            # Unweighted semivariance
-            return np.mean(valid_semivariances) if valid_semivariances.size > 0 else 0
-
-    def plot_points_with_distance_condition(
-        self, lag, delta, point_coords="central", ax=None, use_grid=False, **kwargs
-    ):
-        """
-        Plots the points that satisfy the distance condition relative to the central point.
-        """
-        if point_coords == "central":
-            point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_grid:
-            central_point = (
-                self.position_grid[0][point_coords[0], point_coords[1]],
-                self.position_grid[1][point_coords[0], point_coords[1]],
-            )
-        else:
-            central_point = point_coords
-
-        if use_grid:
-            x_coords, y_coords = (
-                np.asarray(self.position_grid[0]).flatten(),
-                np.asarray(self.position_grid[1]).flatten(),
-            )
-        else:
-            x_coords, y_coords = np.indices(self.data.shape)
-            x_coords, y_coords = x_coords.flatten(), y_coords.flatten()
-
-        distances = np.sqrt((x_coords - central_point[0]) ** 2 + (y_coords - central_point[1]) ** 2)
-
-        valid_points = (distances > (lag - 0.5 * delta)) & (distances <= (lag + 0.5 * delta))
-
-        if ax is None:
-            fig = plt.figure(figsize=(8, 8))
-            ax = fig.add_subplot(111)
-        else:
-            fig = ax.get_figure()
-
-        def_kwargs = dict(
-            marker="o",
-            label="Valid Points",
-            c="red",
-        )
-
-        kwargs = {**def_kwargs, **kwargs}
-
-        # if color is passed in kwargs remove the c argument
-        if "color" in kwargs:
-            kwargs.pop("c")
-
-        ax.scatter(x_coords[valid_points], y_coords[valid_points], **kwargs)
-        ax.scatter(central_point[0], central_point[1], c="k", marker="x")
-        ax.set_title(f"Lag Distance {lag}")
-
-        if use_grid:
-            ax.set_xlabel("X [mm]")
-            ax.set_ylabel("Y [mm]")
-            ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            ax.yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            xlims = (self.position_grid[0].min(), self.position_grid[0].max())
-            ylims = (self.position_grid[1].min(), self.position_grid[1].max())
-
-        else:
-            ax.set_xlabel("X index")
-            ax.set_ylabel("Y index")
-            xlims = (0, self.data.shape[0])
-            ylims = (0, self.data.shape[1])
-
-        ax.set_xlim(xlims)
-        ax.set_ylim(ylims)
-        ax.legend()
-        ax.grid(True)
-
-        return fig
-
-    def plot_points_with_angle_condition(
-        self,
-        angle,
-        tolerance,
-        point_coords="central",
-        ax=None,
-        consider_both_signs=True,
-        use_grid=False,
-        deg=True,
-        **kwargs,
-    ):
-        """
-        Plots the points that satisfy the distance condition relative to the central point.
-        """
-        if point_coords == "central":
-            point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_grid:
-            central_point = (
-                self.position_grid[0][point_coords[0], point_coords[1]],
-                self.position_grid[1][point_coords[0], point_coords[1]],
-            )
-        else:
-            central_point = point_coords
-
-        if use_grid:
-            x_coords, y_coords = (
-                np.asarray(self.position_grid[0]).flatten(),
-                np.asarray(self.position_grid[1]).flatten(),
-            )
-        else:
-            x_coords, y_coords = np.indices(self.data.shape)
-            x_coords, y_coords = x_coords.flatten(), y_coords.flatten()
-
-        angles = np.arctan2(y_coords - central_point[1], x_coords - central_point[0])
-
-        if deg:
-            angle = np.deg2rad(angle)
-            tolerance = np.deg2rad(tolerance)
-
-        valid_points = np.abs(angles - angle) <= tolerance
-
-        # consider also the opposite angle
-        if consider_both_signs:
-        #     opposite_angle = (
-        #         angle - np.pi
-        #     )  # the input angle is between 0 and 2pi and the opposite angle is between -pi and pi
-        #     if opposite_angle == -np.pi:
-        #         opposite_angle = np.pi
-            valid_points |= np.abs(angles - angle - np.pi) <= tolerance
-            valid_points |= np.abs(angles - angle + np.pi) <= tolerance
-
-        if ax is None:
-            fig = plt.figure(figsize=(8, 8))
-            ax = fig.add_subplot(111)
-        else:
-            fig = ax.get_figure()
-
-        def_kwargs = dict(
-            marker="o",
-            label="Valid Points",
-            c="red",
-        )
-
-        kwargs = {**def_kwargs, **kwargs}
-
-        # if color is passed in kwargs remove the c argument
-        if "color" in kwargs:
-            kwargs.pop("c")
-
-        ax.scatter(x_coords[valid_points], y_coords[valid_points], **kwargs)
-
-        if use_grid:
-            ax.set_xlabel("X [mm]")
-            ax.set_ylabel("Y [mm]")
-            ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            ax.yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            xlims = (self.position_grid[0].min(), self.position_grid[0].max())
-            ylims = (self.position_grid[1].min(), self.position_grid[1].max())
-
-        else:
-            ax.set_xlabel("X index")
-            ax.set_ylabel("Y index")
-            xlims = (0, self.data.shape[0])
-            ylims = (0, self.data.shape[1])
-
-        ax.scatter(central_point[0], central_point[1], c="k", marker="x")
-        ax.set_title(f"Angle {np.rad2deg(angle):.0f}° ± {np.rad2deg(tolerance):.0f}°")
-        ax.set_xlim(xlims)
-        ax.set_ylim(ylims)
-        ax.legend()
-        ax.grid(True)
-        return fig
-
-    def plot_lag_and_angle_conditions(
-        self,
-        lag=1,
-        angle="x",
-        tolerance=5,
-        delta=1,
-        point_coords="central",
-        both_signs=True,
-        ax=None,
-        use_grid=False,
-        deg=True,
-        **kwargs,
-    ):
-        if isinstance(angle, str):
-            if angle.capitalize() == "X":
-                angle = 0
-            elif angle.capitalize() == "Y":
-                angle = 90 if deg else np.pi / 2
+        correlation_matrices = []
+        for freq_index in self.frequency_indices:
+            data = self.data[..., freq_index]
+            df = pd.DataFrame(data)
+            if axis == 0:
+                correlation_matrix = df.corr()
             else:
-                raise ValueError("angle must be 'x', 'y' or a float")
+                correlation_matrix = df.T.corr()
+            correlation_matrices.append(correlation_matrix)
+        correlation_matrix = np.stack(correlation_matrices, axis=-1)
+        if self.absolute_correlation_values:
+            correlation_matrix = np.abs(correlation_matrix)
+        return correlation_matrix
 
-        if deg:
-            angle = np.deg2rad(angle)
-            tolerance = np.deg2rad(tolerance)
+    def get_mean_matrix(self, axis: int = 0) -> np.ndarray:
+        """
+        Calculate the mean matrix along the specified axis for each frequency index.
 
-        if use_grid:
-            x_coords, y_coords = (
-                np.asarray(self.position_grid[0]).flatten(),
-                np.asarray(self.position_grid[1]).flatten(),
-            )
-        else:
-            x_coords, y_coords = np.indices(self.data.shape)
-            x_coords, y_coords = x_coords.flatten(), y_coords.flatten()
+        Args:
+            axis (int, optional): The axis along which to calculate the mean. Defaults to 0.
 
-        if point_coords == "central":
-            point_coords = (self.data.shape[0] // 2, self.data.shape[1] // 2)
-        if use_grid:
-            central_point = (
-                self.position_grid[0][point_coords[0], point_coords[1]],
-                self.position_grid[1][point_coords[0], point_coords[1]],
-            )
-        else:
-            central_point = point_coords
+        Returns:
+            numpy.ndarray: The mean matrices for each frequency index.
+        """
+        mean_matrices = []
+        for freq_index in self.frequency_indices:
+            data = self.data[..., freq_index]
+            df = pd.DataFrame(data)
+            mean_axis = df.max(axis=axis).to_numpy()
+            N = len(mean_axis)
+            mean_matrix = np.zeros((N, N))
+            for ii in range(N):
+                for jj in range(N):
+                    mean_matrix[ii, jj] = np.mean([mean_axis[ii], mean_axis[jj]])
+            mean_matrices.append(mean_matrix)
 
-        # Calculate distances and angles between all pairs
-        distances = np.sqrt((x_coords - central_point[0]) ** 2 + (y_coords - central_point[1]) ** 2)
-        angles = np.arctan2(y_coords - central_point[1], x_coords - central_point[0])
+        mean_matrix = np.stack(mean_matrices, axis=-1)
+        if self.absolute_correlation_values:
+            mean_matrix = np.abs(mean_matrix)
+        return mean_matrix
 
-        valid_points = (distances > (lag - 0.5 * delta)) & (distances <= (lag + 0.5 * delta))
-        angle_valid_points = np.abs(angles - angle) <= tolerance
-        if both_signs:
-            opposite_angle = angle - np.pi
-            if opposite_angle == -np.pi:
-                opposite_angle = np.pi
-            angle_valid_points |= np.abs(angles - opposite_angle) <= tolerance
-
-        valid_points &= angle_valid_points
-
-        if ax is None:
-            fig = plt.figure(figsize=(8, 8))
-            ax = fig.add_subplot(111)
-        else:
-            fig = ax.get_figure()
-
-        def_kwargs = dict(
-            marker="o",
-            label="Valid Points",
-        )
-
-        kwargs = {**def_kwargs, **kwargs}
-
-        ax.scatter(x_coords[valid_points], y_coords[valid_points], **kwargs)
-        ax.scatter(central_point[0], central_point[1], c="blue", label="Central Point")
-        ax.set_title(f"Lag {lag} @ {np.rad2deg(angle):.0f}° ± {np.rad2deg(tolerance):.0f}°")
-        ax.set_xlim(0, self.data.shape[0])
-        ax.set_ylim(0, self.data.shape[1])
-        ax.set_xlabel("X Coordinate")
-        ax.set_ylabel("Y Coordinate")
-        ax.legend()
-        ax.grid(True)
-        return fig
-
-    def plot_correlation(
-        self,
-        apply_variable_alpha: bool = True,
-        units: str = "dBm",
-        heatmap_title: str = "Scan Heatmap",
-        cmap_heatmap: str = "jet",
-        cmap_correlation: str = "hot",
-        figsize_heatmap: tuple = (10, 3),
-        figsize_correlation: tuple = (10, 5),
-    ):
-        if apply_variable_alpha:
-            mean_x_matrix = self.get_mean_matrix(axis=0)
-            mean_y_matrix = self.get_mean_matrix(axis=1)
-            # normalize the mean matrices between 0 and 1
-            alpha_x = (mean_x_matrix - mean_x_matrix.min()) / (
-                mean_x_matrix.max() - mean_x_matrix.min()
-            )
-            alpha_y = (mean_y_matrix - mean_y_matrix.min()) / (
-                mean_y_matrix.max() - mean_y_matrix.min()
-            )
-        else:
-            alpha_x = 1
-            alpha_y = 1
-        # get the correlation matrices
-        correlation_matrix_X = self.get_correlation_matrix(axis=0)
-        correlation_matrix_Y = self.get_correlation_matrix(axis=1)
-
-        ## plot the correlation matrices
-        fig_plot, ax = plt.subplots(figsize=figsize_heatmap, constrained_layout=True)
-        q = ax.imshow(self.data, aspect="auto", cmap=cmap_heatmap)
-        plt.colorbar(ax=ax, mappable=q, label=f"[{units}]")
-        ax.set_xlabel("y_index")
-        ax.set_ylabel("x_index")
-        ax.set_title(heatmap_title, fontsize=16)
-
-        fig, ax = plt.subplots(2, 2, figsize=figsize_correlation, constrained_layout=True)
-
-        ax[0, 0].plot(self.df.T)
-        ax[0, 1].plot(self.df)
-        q_row = ax[1, 0].imshow(
-            correlation_matrix_X, aspect="auto", cmap=cmap_correlation, alpha=alpha_x
-        )
-        q_column = ax[1, 1].imshow(
-            correlation_matrix_Y, aspect="auto", cmap=cmap_correlation, alpha=alpha_y
-        )
-
-        ax[0, 0].set_title("Signals Along X")
-        ax[0, 1].set_title("Signals Along Y")
-        ax[0, 0].set_xlabel("y_index")
-        ax[0, 0].set_ylabel(f"[{units}]")
-        ax[0, 1].set_xlabel("x_index")
-        ax[0, 1].set_ylabel(f"[{units}]")
-
-        ax[1, 0].set_title("correlation along X axis")
-        ax[1, 1].set_title("correlation along Y axis")
-        ax[1, 0].set_xlabel("x_index")
-        ax[1, 1].set_xlabel("y_index")
-
-        ax[1, 0].set_ylabel("x_index")
-        ax[1, 1].set_ylabel("y_index")
-
-        # for axx in ax.flatten():
-        #     xmin, xmax = axx.get_xlim()
-        #     ymin, ymax = axx.get_ylim()
-        #     axx.set_xticks(list(axx.get_xticks()) + [xmax-0.5])
-        #     axx.set_yticks(list(axx.get_yticks()) + [ymax-0.5])
-        #     axx.set_xlim(xmin, xmax)
-        #     axx.set_ylim(ymin, ymax)
-
-        # add colorbars
-        fig.colorbar(q_row, ax=ax[1, 0])
-        fig.colorbar(q_column, ax=ax[1, 1])
-
-        ffig, _ = stack_figures([fig_plot, fig], height_ratios=[0.5, 1], aspect="equal", top=0.95)
-        ffig.suptitle("Correlation Analysis - No Grid", fontsize=14)
-
-        return ffig
+    def __repr__(self) -> str:
+        return f"CorrelationAnalyzer(data={self.data.shape}, position_grid={self.position_grid})"
