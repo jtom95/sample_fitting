@@ -9,6 +9,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 from my_packages.constants import DistanceUnits
+from ._gaussian_regression_plotting import GaussianRegressionPlotterMixin
 from .kernel_manager import KernelManager   
 
 from ..abstract_sample_model import AbstractSampleModel
@@ -34,7 +35,7 @@ class GaussianRegressionModelConfig:
         if isinstance(self.units, str):
             self.units = DistanceUnits[self.units]
 
-class GaussianRegressionModel(AbstractSampleModel):  
+class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixin):  
     """
     A wrapper class for Gaussian Process Regression using scikit-learn's GaussianProcessRegressor.
     Provides methods for fitting, predicting, and evaluating the Gaussian Process model.
@@ -151,6 +152,20 @@ class GaussianRegressionModel(AbstractSampleModel):
                 return self.scaler.fit_transform(X)
             else:
                 return self.scaler.transform(X)
+    
+    def initalize_gp(self, X, **kwargs):
+        self.X_scaled = self._preprocess_data(X, fit=True)
+        self.kernelM.set_scaler(self.scaler)
+        self.kernel = self.kernelM.make_kernel(
+            normalize=True, max_range=self.max_range
+            )
+        self.gp = GaussianProcessRegressor(
+            kernel=self.kernel,
+            n_restarts_optimizer=self.n_restarts_optimizer,
+            alpha=self.alpha,
+            **kwargs,
+        )
+        return self
 
     def fit(self, X, y, **kwargs) -> "GaussianRegressionModel":
         """
@@ -161,21 +176,48 @@ class GaussianRegressionModel(AbstractSampleModel):
 
         # change the units of the spatial coordinates
         y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
-        X_scaled = self._preprocess_data(X, fit=True)
-        self.kernelM.set_scaler(self.scaler)
-        self.kernel = self.kernelM.make_kernel(
-            normalize=True, max_range=self.max_range
-            )
-        # self.kernel = self.make_kernel(normalize=True, max_range=max_range)
+        
+        self.initalize_gp(X, **kwargs)
+        # X_scaled = self._preprocess_data(X, fit=True)
+        # self.kernelM.set_scaler(self.scaler)
+        # self.kernel = self.kernelM.make_kernel(
+        #     normalize=True, max_range=self.max_range
+        #     )
+        # # self.kernel = self.make_kernel(normalize=True, max_range=max_range)
 
-        self.gp = GaussianProcessRegressor(
-            kernel=self.kernel,
-            n_restarts_optimizer=self.n_restarts_optimizer,
-            alpha=self.alpha,
-            **kwargs,
-        )
-        self.gp.fit(X_scaled, y_scaled)
+        # self.gp = GaussianProcessRegressor(
+        #     kernel=self.kernel,
+        #     n_restarts_optimizer=self.n_restarts_optimizer,
+        #     alpha=self.alpha,
+        #     **kwargs,
+        # )
+        self.gp.fit(self.X_scaled, y_scaled)
         return self
+
+    def sample_prior_gp(self, X: np.ndarray, n_samples: int=5, random_state = None) -> np.ndarray:
+        """
+        Make predictions using the prior GP.
+        :param X: 2D array of spatial coordinates for prediction (shape [n_samples, 2]).
+        :return: Predicted field values at the given coordinates (shape [n_samples]).
+        """
+        self.initalize_gp(X)
+        y_predicted = self.gp.sample_y(self.X_scaled, n_samples=n_samples, random_state=random_state)
+        return y_predicted
+
+    def predict_prior_gp(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+        """
+        Make predictions using the prior GP.
+        :param X: 2D array of spatial coordinates for prediction (shape [n_samples, 2]).
+        :param return_std: If True, returns the standard deviation of the predictions.
+        :return: Predicted field values at the given coordinates (shape [n_samples]).
+                 If return_std is True, also returns the standard deviation of the predictions.
+        """
+        self.initalize_gp(X)
+        y_predicted = self.gp.predict(self.X_scaled, return_std=return_std)
+        if return_std:
+            y_predicted, std_devs = y_predicted
+            return y_predicted, std_devs
+        return y_predicted
 
     def predict(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
