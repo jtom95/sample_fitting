@@ -107,7 +107,7 @@ class CorrelationPlotterMixin:
                 if j < n_cols - 1:
                     ax_right.set_ylabel("")
                     ax_right.set_yticks([])
-        
+
         if not show_axes_labels:
             for tuple_ax in returned_axes.flatten():
                 if tuple_ax is not None:
@@ -128,26 +128,6 @@ class CorrelationPlotterMixin:
                     ax_right = tuple_ax[1]
                     ax_top.set_xticks([])
                     ax_right.set_yticks([])   
-        
-        # turn off the spines
-        for tuple_ax in returned_axes.flatten():
-            if tuple_ax is not None:
-                ax = tuple_ax[0]
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-                ax.spines['bottom'].set_visible(False)
-                ax.spines['left'].set_visible(False)
-                ax_top = tuple_ax[2]
-                ax_top.spines['top'].set_visible(False)
-                ax_top.spines['right'].set_visible(False)
-                ax_top.spines['bottom'].set_visible(False)
-                ax_top.spines['left'].set_visible(False)
-                ax_right = tuple_ax[1]
-                ax_right.spines['top'].set_visible(False)
-                ax_right.spines['right'].set_visible(False)
-                ax_right.spines['bottom'].set_visible(False)
-                ax_right.spines['left'].set_visible(False)
-        
 
         # draw the figure to get the positions
         fig.canvas.draw()
@@ -221,32 +201,35 @@ class CorrelationPlotterMixin:
         x_dim = self.y_correlation_matrix.shape[1]
         xaxis = self.position_grid.x
         yaxis = self.position_grid.y
-
-        if x_dim < y_dim:
-            extra_steps = y_dim - x_dim
-            x_step = np.mean(np.diff(xaxis))
-            y_corr_limits = (xaxis[0], xaxis[-1]+extra_steps*x_step)
-            x_corr_limits = (yaxis[0], yaxis[-1])
-        elif x_dim > y_dim:
-            extra_steps = x_dim - y_dim
-            y_step = np.mean(np.diff(yaxis))
-            x_corr_limits = (yaxis[0], yaxis[-1]+extra_steps*y_step)
-            y_corr_limits = (xaxis[0], xaxis[-1])
-        else:
-            y_corr_limits = (xaxis[0], xaxis[-1])
-            x_corr_limits = (yaxis[0], yaxis[-1])
-
+        
         if use_position_grid:
-            if self.position_grid is None:
-                raise ValueError("Position grid is not available.")
-            extent = [
-                x_corr_limits[0],
-                x_corr_limits[1],
-                x_corr_limits[0],
-                x_corr_limits[1],
-            ]
+            if x_dim < y_dim:
+                extra_steps = y_dim - x_dim
+                x_step = np.mean(np.diff(xaxis))
+                y_corr_limits = (xaxis[0], xaxis[-1]+extra_steps*x_step)
+                x_corr_limits = (yaxis[0], yaxis[-1])
+            elif x_dim > y_dim:
+                extra_steps = x_dim - y_dim
+                y_step = np.mean(np.diff(yaxis))
+                x_corr_limits = (yaxis[0], yaxis[-1]+extra_steps*y_step)
+                y_corr_limits = (xaxis[0], xaxis[-1])
+            else:
+                y_corr_limits = (xaxis[0], xaxis[-1])
+                x_corr_limits = (yaxis[0], yaxis[-1])
         else:
-            extent = [0, combined_corr.shape[0], 0, combined_corr.shape[1]]
+            y_corr_limits = (0, combined_corr.shape[0])
+            x_corr_limits = (0, combined_corr.shape[0]) # the correlation matrix is square
+
+        
+        if self.position_grid is None:
+            raise ValueError("Position grid is not available.")
+        extent = [
+            x_corr_limits[0],
+            x_corr_limits[1],
+            x_corr_limits[0],
+            x_corr_limits[1],
+        ]
+        
 
         im = ax.imshow(combined_corr, extent=extent, cmap=cmap, alpha=alpha, aspect=aspect, **kwargs)
         plt.colorbar(im, ax=ax)
@@ -255,14 +238,13 @@ class CorrelationPlotterMixin:
         if use_position_grid:
             ax.xaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
             ax.yaxis.set_major_formatter(lambda x, pos: f"{x*1e3:.0f}")
-            ax.set_xlabel("Y Position [mm]")
-            ax.set_ylabel("Y Position [mm]")
+        
 
-            # Add extra x-label and y-label for Y Position
-            ax_top = ax.twiny()
-            ax_right = ax.twinx()
-            ax_top.set_xlabel("X Position [mm]")
-            ax_right.set_ylabel("X Position [mm]")
+        # Add extra x-label and y-label for Y Position
+        ax_top = ax.twiny()
+        ax_right = ax.twinx()
+        
+        if use_position_grid:
             # Set the tick locations and labels for the top and right axes
             # chose 5 evenly spaced ticks
             x_values_espaced = np.linspace(xaxis.min(), xaxis.max(), n_twin_labels)
@@ -278,22 +260,114 @@ class CorrelationPlotterMixin:
 
             # Invert the top and right axes
             ax_right.invert_yaxis()
-        else:
-            ax.set_xlabel("X Index")
-            ax.set_ylabel("X Index")
+            
+            # shift the spines and set the labels
+            ax_right.spines["right"].set_position(
+                ("axes", 1 - (y_corr_limits[-1]-xaxis[-1]) / (y_corr_limits[-1] - y_corr_limits[0]))
+            )
+            # write the labels in the correct place
+            desired_y_value = (xaxis[-1] + xaxis[0]) / 2
+            transformed_y_value_x, _ = ax_top.transAxes.inverted().transform(
+                ax_top.transData.transform((desired_y_value, 0))
+            )
+            _, transformed_y_value_y = ax_right.transAxes.inverted().transform(
+                ax_right.transData.transform((0, desired_y_value))
+            )
 
-            # Add extra x-label and y-label for Y Index
-            ax_top = ax.twiny()
-            ax_top.invert_xaxis()
-            ax_right = ax.twinx()
-            ax_top.set_xlabel("Y Index")
-            ax_right.set_ylabel("Y Index")
+            ax_top.set_xlabel("X Position [mm]", ha="center", va="bottom", x=transformed_y_value_x)
+            ax_right.set_ylabel("X Position [mm]", ha="center", va="top", y=transformed_y_value_y)
+
+
+            # shift the x axes labels to the bottom to where y_right is equal to yaxis[0]
+            ax.spines["bottom"].set_position(
+                ("axes", 1-(x_corr_limits[-1]-yaxis[0]) / (x_corr_limits[-1] - x_corr_limits[0]))
+            )
+            
+            # write the labels in the correct place
+            desired_x_value = (yaxis[0] + yaxis[-1]) / 2
+            transformed_x_value_x, _ = ax.transAxes.inverted().transform(
+                ax.transData.transform((desired_x_value, 0))
+            )
+            _ , transformed_x_value_y = ax.transAxes.inverted().transform(
+                ax.transData.transform((0, desired_x_value))
+            )
+
+            # Set the x-axis label with the transformed x position
+            ax.set_xlabel("Y Position [mm]", ha="center", va="top", x=transformed_x_value_x)
+            ax.set_ylabel("Y Position [mm]", ha="center", va="bottom", y=transformed_x_value_y)
+            
+            
+        else:
 
             ax_top.set_xlim(0, combined_corr.shape[0])
             ax_right.set_ylim(0, combined_corr.shape[1])
 
             # Invert the top and right axes
-            ax_top.invert_yaxis()
+            ax_top.invert_yaxis()   
+            
+            
+            # Set the tick locations and labels for the top and right axes
+            # chose 5 evenly spaced ticks
+            x_values_espaced = np.linspace(0, x_dim, n_twin_labels, dtype=int)
+            ax_top.set_xticks(x_values_espaced)
+            ax_right.set_yticks(x_values_espaced)
+
+            ax_top.set_xlim(y_corr_limits)
+            ax_right.set_ylim(y_corr_limits)
+            ax.set_xlim(x_corr_limits)
+            ax.set_ylim(x_corr_limits)
+
+            # Invert the top and right axes
+            ax_right.invert_yaxis()
+            
+            # shift the spines and set the labels
+            ax_right.spines["right"].set_position(
+                ("axes", 1 - (y_corr_limits[-1]-x_dim) / combined_corr.shape[0])
+            )
+            # write the labels in the correct place
+            desired_y_value = x_dim / 2
+            transformed_y_value_x, _ = ax_top.transAxes.inverted().transform(
+                ax_top.transData.transform((desired_y_value, 0))
+            )
+            _, transformed_y_value_y = ax_right.transAxes.inverted().transform(
+                ax_right.transData.transform((0, desired_y_value))
+            )
+
+            ax_top.set_xlabel("X Index", ha="center", va="bottom", x=transformed_y_value_x)
+            ax_right.set_ylabel("X Index", ha="center", va="top", y=transformed_y_value_y)
+
+
+            # shift the x axes labels to the bottom to where y_right is equal to yaxis[0]
+            ax.spines["bottom"].set_position(
+                ("axes", (x_corr_limits[-1]-y_dim) / combined_corr.shape[0])
+            )
+            
+            # write the labels in the correct place
+            desired_x_value = y_dim / 2
+            transformed_x_value_x, _ = ax.transAxes.inverted().transform(
+                ax.transData.transform((desired_x_value, 0))
+            )
+            _ , transformed_x_value_y = ax.transAxes.inverted().transform(
+                ax.transData.transform((0, desired_x_value))
+            )
+
+            # Set the x-axis label with the transformed x position
+            ax.set_xlabel("Y Index", ha="center", va="top", x=transformed_x_value_x)
+            ax.set_ylabel("Y Index", ha="center", va="bottom", y=transformed_x_value_y)
+
+        # remove the spines
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax_top.spines["top"].set_visible(False)
+        ax_top.spines["right"].set_visible(False)
+        ax_top.spines["bottom"].set_visible(False)
+        ax_top.spines["left"].set_visible(False)
+        ax_right.spines["top"].set_visible(False)
+        ax_right.spines["right"].set_visible(False)
+        ax_right.spines["bottom"].set_visible(False)
+        ax_right.spines["left"].set_visible(False) 
         return fig, (ax, ax_right, ax_top)
 
     def plot_correlations(
