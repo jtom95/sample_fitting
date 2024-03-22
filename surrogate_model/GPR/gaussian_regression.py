@@ -1,5 +1,6 @@
 from typing import Union, List, Tuple, Optional, Callable
 from copy import deepcopy
+import logging
 from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,9 +46,13 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         configs: GaussianRegressionModelConfig = GaussianRegressionModelConfig(),
         **kwargs
     ):
+        self.logger = logging.getLogger(__name__)
         # if there are kwargs
         for key, value in kwargs.items():
-            setattr(configs, key, value)
+            if hasattr(configs, key):
+                setattr(configs, key, value)
+            else:
+                self.logger.warning(f"Unknown parameter {key} with value {value}: ignoring.")
         # run the post init method again
         configs.__post_init__()
         self.configs = configs    
@@ -82,6 +87,12 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
     @alpha.setter
     def alpha(self, value):
         self.configs.alpha = value
+    
+    @property
+    def rescaled_alpha(self):
+        if not hasattr(self, "label_scaler"):
+            raise ValueError("The model has not been fitted yet.")
+        return self.alpha * self.label_scaler.scale_**2
 
     @property
     def max_range(self):
@@ -152,13 +163,19 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
                 return self.scaler.fit_transform(X)
             else:
                 return self.scaler.transform(X)
-    
-    def initalize_gp(self, X, **kwargs):
+
+    def initalize_gp(self, X, rescale_alpha=False, **kwargs):
+        if np.ndim(X) == 1:
+            X = X.reshape(-1, 1)
         self.X_scaled = self._preprocess_data(X, fit=True)
         self.kernelM.set_scaler(self.scaler)
         self.kernel = self.kernelM.make_kernel(
             normalize=True, max_range=self.max_range
             )
+        
+        if rescale_alpha:
+            self.alpha = self.rescaled_alpha
+        
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
             n_restarts_optimizer=self.n_restarts_optimizer,
@@ -167,7 +184,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         )
         return self
 
-    def fit(self, X, y, **kwargs) -> "GaussianRegressionModel":
+    def fit(self, X, y, rescale_alpha=False, **kwargs) -> "GaussianRegressionModel":
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -175,9 +192,9 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         """
 
         # change the units of the spatial coordinates
-        y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
-        
-        self.initalize_gp(X, **kwargs)
+        self.y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
+
+        self.initalize_gp(X, rescale_alpha=rescale_alpha, **kwargs)
         # X_scaled = self._preprocess_data(X, fit=True)
         # self.kernelM.set_scaler(self.scaler)
         # self.kernel = self.kernelM.make_kernel(
@@ -191,7 +208,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         #     alpha=self.alpha,
         #     **kwargs,
         # )
-        self.gp.fit(self.X_scaled, y_scaled)
+        self.gp.fit(self.X_scaled, self.y_scaled)
         return self
 
     def sample_prior_gp(self, X: np.ndarray, n_samples: int=5, random_state = None) -> np.ndarray:
@@ -203,6 +220,21 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.initalize_gp(X)
         y_predicted = self.gp.sample_y(self.X_scaled, n_samples=n_samples, random_state=random_state)
         return y_predicted
+
+    def sample_gp_candidates(self, X_test: np.ndarray, n_samples: int=5, random_state = None) -> np.ndarray:
+        """
+        Make predictions using the prior GP.
+        :param X: 2D array of spatial coordinates for prediction (shape [n_samples, 2]).
+        :return: Predicted field values at the given coordinates (shape [n_samples]).
+        """
+        if not hasattr(self, "X_scaled"):
+            raise ValueError("The model has not been fitted yet.")
+        
+        X_scaled = self._preprocess_data(X_test, fit=False)
+        y_predicted = self.gp.sample_y(X_scaled, n_samples=n_samples, random_state=random_state)
+        y_predicted = self.label_scaler.inverse_transform(y_predicted)
+        return y_predicted
+
 
     def predict_prior_gp(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """

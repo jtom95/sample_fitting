@@ -47,7 +47,7 @@ class GaussianRegressionPlotterMixin:
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self.units.value:.1f}"))
         ax.set_xlabel("X [{}]".format(self.units.name))        
         ax.set_ylabel("y")
-    
+
     def plot_prior_gp_candidates_with_theoretical_stats(
         self,
         X: np.ndarray,
@@ -67,17 +67,16 @@ class GaussianRegressionPlotterMixin:
             fig, ax = plt.subplots(figsize=figsize)
         else:
             fig = ax.get_figure()
-            
+
         self.plot_prior_gp_mean_and_std(X, ax=ax)
         if np.ndim(X) == 1:
             X = X.reshape(-1, 1)
-            
+
         y_samples = self.sample_prior_gp(X, n_samples=n_samples, random_state=random_state)
         for i, y_sample in enumerate(y_samples.T):
             ax.plot(X[:, 0], y_sample, alpha=1, linestyle="-", linewidth=candidate_linewidth)
-            
+
         return fig, ax
-        
 
     def plot_prior_gp_candidates_with_sample_stats(
         self,
@@ -175,7 +174,7 @@ class GaussianRegressionPlotterMixin:
 
         for i in range(n_samples, len(flat_axes)):
             flat_axes[i].axis("off")
-            
+
         if artistic:
             for axx in flat_axes:
                 axx.axis("off")
@@ -187,19 +186,23 @@ class GaussianRegressionPlotterMixin:
                 # set all the text color to white
         return fig, ax
 
-    def plot_kernel_functions(self, kernels: List[Kernel], X: np.ndarray, ax: plt.Axes = None):
+    @staticmethod
+    def plot_kernel_functions(kernels: List[Kernel], X: np.ndarray, ax: plt.Axes = None, **kwargs):
         """
         Plot kernel functions.
         :param kernels: List of kernel functions to plot.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
         :param ax: Matplotlib axes to plot on. If None, a new figure and axes will be created.
         """
+        if np.ndim(X) == 1:
+            X = X.reshape(-1, 1)
+        
         if ax is None:
             _, ax = plt.subplots(figsize=(8, 6))
 
         for kernel in kernels:
             K = kernel(X)
-            ax.plot(X[:, 0], K[:, 0], label=str(kernel))
+            ax.plot(X[:, 0], K[:, 0], label=str(kernel), **kwargs)
 
         ax.set_xlabel("X")
         ax.set_ylabel("Kernel")
@@ -232,8 +235,65 @@ class GaussianRegressionPlotterMixin:
             alpha=0.2,
             label="Posterior std",
         )
-        
+
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self.units.value:.1f}"))
         ax.set_xlabel("X [{}]".format(self.units.name))
         ax.set_ylabel("y")
         ax.legend()
+
+    def plot_candidates_with_theoretical_stats(
+        self,
+        X: np.ndarray,
+        n_samples: int = 4,
+        ax: plt.Axes = None,
+        candidate_linewidth: float = 0.5,
+        figsize: Tuple[int, int] = (8, 6),
+        random_state = None,
+    ):
+        """
+        Plot prior GP candidates.
+        :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
+        :param n_samples: Number of prior samples to draw.
+        :param ax: Matplotlib axes to plot on. If None, a new figure and axes will be created.
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = ax.get_figure()
+
+        if np.ndim(X.squeeze()) != 1:
+            raise ValueError("X must be a 1D array.")
+        if np.ndim(X) == 1:
+            X = X.reshape(-1, 1)
+
+        if not hasattr(self, "X_scaled"):
+            raise ValueError("The model must be fitted before plotting the candidates.")
+        X_train = self.scaler.inverse_transform(self.X_scaled)
+        y_train = self.label_scaler.inverse_transform(self.y_scaled)
+
+        y_pred, y_std = self.predict(X, return_std=True)
+
+        y_pred = np.squeeze(y_pred)
+        y_std = np.squeeze(y_std)
+
+        ax.scatter(X_train[:, 0], y_train, color="red", label="Training data")
+        ax.plot(X[:, 0], y_pred, color="black", label="Posterior mean")
+        ax.fill_between(
+            X[:, 0],
+            y_pred - y_std,
+            y_pred + y_std,
+            color="gray",
+            alpha=0.2,
+            label="Posterior std",
+        )
+
+        # add the prior samples
+        y_samples = self.sample_gp_candidates(X, n_samples=n_samples, random_state=random_state)
+        for i, y_sample in enumerate(y_samples.T):
+            ax.plot(X[:, 0], y_sample, alpha=1, linestyle="-", linewidth=candidate_linewidth)
+
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self.units.value:.1f}"))
+        ax.set_xlabel("X [{}]".format(self.units.name))
+        ax.set_ylabel("y")
+        ax.legend()
+        return fig, ax
