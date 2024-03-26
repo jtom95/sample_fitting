@@ -274,7 +274,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.kernel = self.kernel.clone_with_theta(params)
         return self.kernel
 
-    def fit_from_theta(self, X, y, theta: dict, K0: Kernel, **kwargs)-> "GaussianRegressionModel":
+    def fit_from_theta(self, X, y, theta: dict, K0: Kernel, rescale_alpha: bool = False, **kwargs)-> "GaussianRegressionModel":
         """
         Fit the Gaussian Process model.
         :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
@@ -284,10 +284,13 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         X_scaled = self._preprocess_data(X, fit=True)
         y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
         self.kernel = self.set_kernel_theta(theta, K0)
+        
+        alpha = self.rescaled_alpha if rescale_alpha else self.alpha
+        
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
             n_restarts_optimizer=self.n_restarts_optimizer,
-            alpha=self.alpha,
+            alpha=alpha,
             **kwargs
         )
 

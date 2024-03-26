@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
 
 # from my_packages.auxiliary_plotting_functions.composite_plots import stack_figures
 from my_packages.classes.aux_classes import Grid
@@ -55,10 +57,15 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
         }
         self.absolute_correlation_values = absolute_correlation_values
 
-        self.x_correlation_matrix = self.get_correlation_matrix(axis=0)
-        self.y_correlation_matrix = self.get_correlation_matrix(axis=1)
-        self.x_mean_matrix = self.get_mean_matrix(axis=0)
-        self.y_mean_matrix = self.get_mean_matrix(axis=1)
+        self.x_correlation_matrix = self.get_correlation_matrix(axis=1)
+        self.y_correlation_matrix = self.get_correlation_matrix(axis=0)
+        self.x_mean_matrix = self.get_mean_matrix(axis=1)
+        self.y_mean_matrix = self.get_mean_matrix(axis=0)
+
+    # alias
+    @property
+    def critical_indices(self) -> np.ndarray:
+        return self.frequency_indices
 
     @property
     def combined_correlation_matrix(self) -> np.ndarray:
@@ -67,7 +74,6 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
             combined_corr = self.get_combined_correlation_matrix(index=f_index)
             combined_corr_list.append(combined_corr)
         return np.stack(combined_corr_list, axis=-1)
-
 
     def get_combined_correlation_matrix(self, index=None):
         if index is None:
@@ -148,7 +154,8 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
             correlation_matrices.append(correlation_matrix)
         correlation_matrix = np.stack(correlation_matrices, axis=-1)
         if self.absolute_correlation_values:
-            correlation_matrix = np.abs(correlation_matrix)
+            # correlation_matrix = np.abs(correlation_matrix)
+            correlation_matrix = np.clip(correlation_matrix, 0, 1)
         return correlation_matrix
 
     def get_mean_matrix(self, axis: int = 0) -> np.ndarray:
@@ -175,7 +182,8 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
 
         mean_matrix = np.stack(mean_matrices, axis=-1)
         if self.absolute_correlation_values:
-            mean_matrix = np.abs(mean_matrix)
+            # mean_matrix = np.abs(mean_matrix)
+            mean_matrix = np.clip(mean_matrix, 0, 1)
         return mean_matrix
 
     def __repr__(self) -> str:

@@ -50,6 +50,11 @@ class CorrelationAnalysis_SamplePlaneR(CorrelationPlotterMixin):
     @property
     def critical_frequencies(self) -> np.ndarray:
         return self.sample_planeR.sample_planes[0].frequency[self.frequency_indices]
+    
+    #alias
+    @property
+    def critical_indices(self) -> np.ndarray:
+        return self.frequency_indices
 
     @property
     def combined_correlation_matrix(self) -> np.ndarray:

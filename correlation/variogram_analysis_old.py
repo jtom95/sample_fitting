@@ -8,117 +8,70 @@ import matplotlib.pyplot as plt
 # from my_packages.auxiliary_plotting_functions.composite_plots import stack_figures
 from my_packages.classes.aux_classes import Grid
 from ._variogram_analysis_plotter_mixin import VariogramAnalyzerPlottingMixin
+
+
 class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
-    """
-    A class for analyzing variograms in 3D data.
-
-    Attributes:
-        data (numpy.ndarray): The 3D data array with dimensions x, y, f.
-        position_grid (Grid, optional): The position grid corresponding to the data.
-        frequency_indices (List[int]): The list of frequency indices to analyze.
-    """
-
     def __init__(
-        self,
-        data: np.ndarray,
-        position_grid: Optional[Grid] = None,
-        frequency_indices: Optional[List[int]] = None,
-        normalize: bool = True,
+        self, data: np.ndarray, position_grid: Optional[Grid] = None, normalize: bool = True
     ):
-        """
-        Initialize the VariogramAnalyzer.
-
-        Args:
-            data (numpy.ndarray): The 3D data array with dimensions x, y, f.
-            position_grid (Grid, optional): The position grid corresponding to the data. Defaults to None.
-            frequency_indices (List[int], optional): The list of frequency indices to analyze. Defaults to None.
-            normalize (bool, optional): Whether to normalize the data. Defaults to True.
-        """
         if normalize:
             data = self._normalize_data(data)
-        if np.ndim(data) == 2:
-            self.data = data[:, :, np.newaxis]
-        elif np.ndim(data) == 3:
-            self.data = data
-        else:
-            raise ValueError("Data must be 2D or 3D.")
+        self.data = data
         self.position_grid = position_grid
-        self.frequency_indices = (
-            frequency_indices if frequency_indices is not None else list(range(data.shape[2]))
-        )
-        self.frequency_indices_order_dict = {
-            freq_index: ii for ii, freq_index in enumerate(self.frequency_indices)
-        }
+        self.df = pd.DataFrame(data.T)
 
-    def calculate_variogram_data(
-        self,
-        lag_step: float,
-        angle: Optional[float],
-        tolerance: float,
-        max_range: Optional[float],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    @staticmethod
+    def _normalize_data(data: np.ndarray) -> np.ndarray:
         """
-        Calculate the variogram data for all frequency indices.
+        Normalize the data to the range [0, 1].
 
         Args:
-            lag_step (float): The lag step size.
-            angle (float, optional): The angle for the variogram.
-            tolerance (float): The tolerance for the variogram.
-            max_range (float, optional): The maximum range for the variogram.
+            data (numpy.ndarray): The input data.
 
         Returns:
-            Tuple[numpy.ndarray, numpy.ndarray]: The lags and semivariances for each frequency index.
+            numpy.ndarray: The normalized data.
         """
-        all_semivariances = []
-        all_lags = []
-        for index in self.frequency_indices:
-            lags, semivariances = self._calculate_variogram_data_at_index(
-                lag_step, angle, tolerance, max_range, index
-            )
-            all_lags.append(lags)
-            all_semivariances.append(semivariances)
-
-        return np.array(all_lags), np.array(all_semivariances)
-
-    def _calculate_variogram_data_at_index(
+        return (data - data.min()) / (data.max() - data.min())
+    
+    def _calculate_variogram_data(
         self,
         lag_step: float,
         angle: Optional[float],
         tolerance: float,
         max_range: Optional[float],
-        index: int,
+        use_position_grid: bool,
     ) -> Tuple[List[float], List[float]]:
         """
-        Calculate the variogram data for a specific frequency index.
+        Calculate the variogram data.
 
         Args:
             lag_step (float): The lag step size.
             angle (float, optional): The angle for the variogram.
             tolerance (float): The tolerance for the variogram.
             max_range (float, optional): The maximum range for the variogram.
-            index (int): The frequency index.
+            use_position_grid (bool): Whether to use the position grid.
 
         Returns:
-            Tuple[List[float], List[float]]: The lags and semivariances for the frequency index.
+            Tuple[List[float], List[float]]: The lags and semivariances for the variogram.
         """
         lags = []
         semivariances = []
         current_lag = lag_step
 
-        for semivariance in self.semivariances_generator_at_index(
+        for semivariance in self.semivariances_generator(
             lag_step=lag_step,
             angle=angle,
             tolerance=tolerance,
             max_range=max_range,
-            index=index,
+            use_grid=use_position_grid,
         ):
             lags.append(current_lag)
             semivariances.append(semivariance)
             current_lag += lag_step
 
         return lags, semivariances
-
-    def semivariances_generator_at_index(
+    
+    def semivariances_generator(
         self,
         lag_step=1,
         angle: float | int | str = None,
@@ -126,27 +79,10 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
         max_range: int | float = None,
         increase_lag_after=None,
         increase_lag_by=3,
+        use_grid=False,
         weighted=False,
         deg=True,
-        index=None,
     ):
-        """
-        Generate semivariances for a specific frequency index.
-
-        Args:
-            lag_step (float, optional): The lag step size. Defaults to 1.
-            angle (float | int | str, optional): The angle for the variogram. Defaults to None.
-            tolerance (float, optional): The tolerance for the variogram. Defaults to 5.
-            max_range (int | float, optional): The maximum range for the variogram. Defaults to None.
-            increase_lag_after (int, optional): The number of lags after which to increase the lag step. Defaults to None.
-            increase_lag_by (int, optional): The factor by which to increase the lag step. Defaults to 3.
-            weighted (bool, optional): Whether to use weighted semivariances. Defaults to False.
-            deg (bool, optional): Whether the angle is in degrees. Defaults to True.
-            index (int, optional): The frequency index. Defaults to None.
-
-        Yields:
-            float: The semivariance for each lag.
-        """
         if isinstance(angle, str):
             if angle.capitalize() == "X":
                 angle = 0
@@ -159,7 +95,8 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             angle = np.deg2rad(angle)
             tolerance = np.deg2rad(tolerance)
 
-        if self.position_grid is not None:
+        # the number of lags depends on the lag size, the angle and size of the grid
+        if use_grid:
             if max_range is None:
                 max_x = self.position_grid[0].max()
                 max_y = self.position_grid[1].max()
@@ -167,18 +104,25 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             else:
                 max_range_at_angle = max_range
 
+            # x_step = self.position_grid[0][0, 1] - self.position_grid[0][0, 0]
+            # y_step = self.position_grid[1][1, 0] - self.position_grid[1][0, 0]
+            # step_at_angle = np.sqrt(x_step**2 + y_step**2) * np.cos(angle - np.pi / 4)
             if increase_lag_after is False or increase_lag_after is None:
                 num_lags_at_angle = max_range_at_angle / lag_step
                 num_lags_at_angle = int(np.ceil(num_lags_at_angle))
             else:
+                # the first increase_lag_after lags are calculated with the given lag
                 num_with_min_lag = max_range_at_angle / lag_step
                 after_min_lag = num_with_min_lag - increase_lag_after
+                # after the first increase_lag_after lags, the lag is set to increase_lag_by lag
                 num_with_increased_lag = after_min_lag / increase_lag_by
                 num_lags_at_angle = increase_lag_after + num_with_increased_lag
                 num_lags_at_angle = int(np.ceil(num_lags_at_angle))
+
         else:
-            N, M = self.data.shape[:2]
+            N, M = self.data.shape
             if max_range is None:
+                # max range is equal to N for angle 0 and to M for angle 90
                 max_range_at_angle = N * np.cos(angle) + M * np.sin(angle)
             else:
                 max_range_at_angle = max_range
@@ -187,8 +131,10 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
                 num_lags_at_angle = max_range_at_angle / lag_step
                 num_lags_at_angle = int(np.ceil(num_lags_at_angle))
             else:
+                # the first increase_lag_after lags are calculated with the given lag
                 num_with_min_lag = max_range_at_angle / lag_step
                 after_min_lag = num_with_min_lag - increase_lag_after
+                # after the first increase_lag_after lags, the lag is set to increase_lag_by lag
                 num_with_increased_lag = after_min_lag / increase_lag_by
                 num_lags_at_angle = increase_lag_after + num_with_increased_lag
                 num_lags_at_angle = int(np.ceil(num_lags_at_angle))
@@ -207,19 +153,19 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             else:
                 lag_at_step = lag_step * (i + 1)
                 delta = (lag_step * 0.5, lag_step * 0.5)
-            semivariance = self.calculate_semivariance_at_index(
+            semivariance = self.calculate_semivariance(
                 lag=lag_at_step,
                 delta=delta,
                 angle=angle,
                 tolerance=tolerance,
                 max_range=max_range,
+                use_grid=use_grid,
                 deg=False,
                 weighted=weighted,
-                index=index,
             )
             yield semivariance
 
-    def calculate_semivariance_at_index(
+    def calculate_semivariance(
         self,
         lag,
         delta: Tuple[float, float] = None,
@@ -227,44 +173,48 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
         tolerance=5,
         consider_both_signs=True,
         max_range=False,
+        use_grid=False,
         deg=True,
         weighted=False,
-        index=None,
     ):
         """
-        Calculate the semivariance for a specific lag and frequency index.
-
+        Calculates the semivariance for a given lag and angle. The semivariance is calculated as the
+        mean of the squared differences between all points that are within the lag and angle range.
         Args:
-            lag (float): The lag distance.
-            delta (Tuple[float, float], optional): The lag tolerance. Defaults to None.
-            angle (float, optional): The angle for the variogram. Defaults to None.
-            tolerance (float, optional): The tolerance for the variogram. Defaults to 5.
-            consider_both_signs (bool, optional): Whether to consider both positive and negative angles. Defaults to True.
-            max_range (float, optional): The maximum range for the variogram. Defaults to False.
-            deg (bool, optional): Whether the angle is in degrees. Defaults to True.
-            weighted (bool, optional): Whether to use weighted semivariances. Defaults to False.
-            index (int, optional): The frequency index. Defaults to None.
+            lag (int or float): This is the distance between the points that are compared.
+            Any points that are within the lag range will be compared. The results are then averaged.
+            angle (int or float): This is the angle between the points that are compared.
+            Any points that are within the angle range will be compared. The results are then averaged.
+            The angle is measured from the positive x-axis and is positive in the counter-clockwise direction.
+            Also a tolerance is added to the angle range to allow for some variation in the angle.
+            tolerance (int or float): This is the tolerance in the angle range. The tolerance is added to the
+            angle range to allow for some variation in the angle.
+            use_grid (bool, optional): If True, the ideal grid is used to calculate the semivariance.
 
         Returns:
-            float: The semivariance for the specified lag and frequency index.
+            float: The semivariance for the given lag and angle.
         """
+
         if delta is None:
             delta = (lag * 0.5, lag * 0.5)
         elif isinstance(delta, (int, float)):
             delta = (delta * 0.5, delta * 0.5)
 
-        if self.position_grid is not None:
+        if use_grid:
             x_coords = np.asarray(self.position_grid[0]).flatten()
             y_coords = np.asarray(self.position_grid[1]).flatten()
+            # create a meshgrid of the x and y coordinates to get all possible combinations and speed up the calculation
             X1, X2 = np.meshgrid(x_coords, x_coords)
             Y1, Y2 = np.meshgrid(y_coords, y_coords)
         else:
-            X_ind, Y_ind = np.indices(self.data.shape[:2])
+            X_ind, Y_ind = np.indices(self.data.shape)
             x_coords = X_ind.flatten()
             y_coords = Y_ind.flatten()
+            # create a meshgrid of the x and y coordinates to get all possible combinations and speed up the calculation
             X1, X2 = np.meshgrid(x_coords, x_coords)
             Y1, Y2 = np.meshgrid(y_coords, y_coords)
 
+        # Calculate distances and angles between all pairs
         distances = np.sqrt((X1 - X2) ** 2 + (Y1 - Y2) ** 2)
 
         valid_pairs = (distances > (lag - delta[0])) & (distances <= (lag + delta[1]))
@@ -277,6 +227,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
                 angle = np.deg2rad(angle)
                 tolerance = np.deg2rad(tolerance)
 
+            # set the angle and tolerance to be between 0 and pi
             if not 0 <= angle < np.pi:
                 raise ValueError("angle must be between 0 and 180 degrees")
             if not 0 <= tolerance < np.pi:
@@ -295,11 +246,12 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
 
             valid_pairs &= valid_angle_pairs
 
-        values = self.data[..., index].flatten()
+        values = self.data.flatten()
         D1, D2 = np.meshgrid(values, values)
         valid_semivariances = (D1[valid_pairs] - D2[valid_pairs]) ** 2
 
         if weighted:
+            # Use the average value of the pair of points as weights
             weights = (np.abs(D1[valid_pairs]) + np.abs(D2[valid_pairs])) / 2
             weighted_semivariances = valid_semivariances * weights
             return (
@@ -308,13 +260,6 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
                 else 0
             )
         else:
+            # Unweighted semivariance
             return np.mean(valid_semivariances) if valid_semivariances.size > 0 else 0
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of the VariogramAnalyzer.
-
-        Returns:
-            str: The string representation of the VariogramAnalyzer.
-        """
-        return f"VariogramAnalyzer(data={self.data.shape}, position_grid={self.position_grid})"
+    
