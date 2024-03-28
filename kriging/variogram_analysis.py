@@ -1,13 +1,17 @@
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict, Callable
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 
+from .variogram_models import VariogramModels
+from ._variogram_analysis_plotter_mixin import VariogramAnalyzerPlottingMixin
 # from my_packages.auxiliary_plotting_functions.composite_plots import stack_figures
 from my_packages.classes.aux_classes import Grid
-from ._variogram_analysis_plotter_mixin import VariogramAnalyzerPlottingMixin
+
+
 class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
     """
     A class for analyzing variograms in 3D data.
@@ -23,7 +27,6 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
         data: np.ndarray,
         position_grid: Optional[Grid] = None,
         frequency_indices: Optional[List[int]] = None,
-        normalize: bool = True,
     ):
         """
         Initialize the VariogramAnalyzer.
@@ -32,10 +35,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             data (numpy.ndarray): The 3D data array with dimensions x, y, f.
             position_grid (Grid, optional): The position grid corresponding to the data. Defaults to None.
             frequency_indices (List[int], optional): The list of frequency indices to analyze. Defaults to None.
-            normalize (bool, optional): Whether to normalize the data. Defaults to True.
         """
-        if normalize:
-            data = self._normalize_data(data)
         if np.ndim(data) == 2:
             self.data = data[:, :, np.newaxis]
         elif np.ndim(data) == 3:
@@ -50,7 +50,87 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             freq_index: ii for ii, freq_index in enumerate(self.frequency_indices)
         }
 
-    def calculate_variogram_data(
+        self.lags = None
+        self.semivariances = None
+
+    def fit_variogram_model_at_index(self, idx: int, model_type: str, initial_params: Optional[Tuple] = None) -> Dict | Callable:
+        """
+        Fit a variogram model to the empirical variogram data.
+
+        Args:
+            model_type (str): The type of variogram model to fit. Options: 'linear', 'power', 'gaussian', 'exponential', 'spherical', 'hole_effect'.
+            initial_params (Tuple, optional): The initial parameters for the variogram model. Defaults to None.
+
+        Returns:
+            Dict: The fitted variogram model parameters.
+        """
+        if self.lags is None or self.semivariances is None:
+            raise ValueError(
+                "Empirical variogram data not available. Call calculate_empirical_variogram() first."
+            )
+
+        model_functions = {
+            "linear": getattr(VariogramModels, "linear"),
+            "power": getattr(VariogramModels, "power"),
+            "gaussian": getattr(VariogramModels, "gaussian"),
+            "exponential": getattr(VariogramModels, "exponential"),
+            "spherical": getattr(VariogramModels, "spherical"),
+            "hole_effect": getattr(VariogramModels, "hole_effect"),
+        }
+
+        if model_type not in model_functions:
+            raise ValueError(
+                f"Invalid model_type. Available options: {', '.join(model_functions.keys())}"
+            )
+
+        model_function = model_functions[model_type]
+
+        if initial_params is None:
+            if model_type == "linear":
+                initial_params = (1, 0)  # Initial slope and nugget
+            elif model_type == "power":
+                initial_params = (1, 1, 0)  # Initial scale, exponent, and nugget
+            else:
+                initial_params = (
+                    0,
+                    np.max(self.semivariances),
+                    np.max(self.lags),
+                )  # Initial nugget, sill, and range
+
+        position = self.frequency_indices_order_dict[idx]
+        lags = self.lags[position] # chose the lags and semivariances for the specific frequency index
+        semivariances = self.semivariances[position] # chose the lags and semivariances for the specific frequency index
+
+        fitted_params, _ = curve_fit(
+            model_function, lags.flatten(), semivariances.flatten(), p0=initial_params
+        )
+
+        if model_type == "linear":
+            return_dict = {"slope": fitted_params[0], "nugget": fitted_params[1], "model_type": model_type}
+        elif model_type == "power":
+            return_dict = {
+                "scale": fitted_params[0],
+                "exponent": fitted_params[1],
+                "nugget": fitted_params[2],
+                "model_type": model_type,
+            }
+        else:
+            return_dict = {
+                "nugget": fitted_params[0],
+                "sill": fitted_params[1],
+                "range_": fitted_params[2],
+                "model_type": model_type,
+            }
+        
+
+        def variogram_model(lag):
+            return model_function(lag, *fitted_params)        
+        return_dict["variogram_model"] = variogram_model
+        return return_dict
+        
+        
+
+    def calculate_empirical_variogram(
         self,
         lag_step: float,
         angle: Optional[float],
@@ -78,7 +158,9 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             all_lags.append(lags)
             all_semivariances.append(semivariances)
 
-        return np.array(all_lags), np.array(all_semivariances)
+        self.lags = np.array(all_lags)
+        self.semivariances = np.array(all_semivariances)
+        return self.lags, self.semivariances
 
     def _calculate_variogram_data_at_index(
         self,
@@ -207,7 +289,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             else:
                 lag_at_step = lag_step * (i + 1)
                 delta = (lag_step * 0.5, lag_step * 0.5)
-            semivariance = self.calculate_semivariance_at_index(
+            semivariance = self.calculate_semivariance_at_index_and_lag(
                 lag=lag_at_step,
                 delta=delta,
                 angle=angle,
@@ -219,7 +301,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin):
             )
             yield semivariance
 
-    def calculate_semivariance_at_index(
+    def calculate_semivariance_at_index_and_lag(
         self,
         lag,
         delta: Tuple[float, float] = None,
