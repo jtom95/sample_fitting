@@ -189,7 +189,7 @@ class VariogramAnalyzerPlottingMixin:
 
         return fig, ax
 
-    def plot_dd_scatter_at_lag(self, lag, delta, angle=0, angle_tolerance=90, ax=None, aspect="equal", units: DistanceUnits = DistanceUnits.mm, **kwargs):
+    def plot_dd_scatter_at_lag(self, lag, delta, angle=0, angle_tolerance=90, ax=None, aspect="equal", units: DistanceUnits = DistanceUnits.mm, **kwargs)-> Tuple[plt.Figure, plt.Axes]:
         if isinstance(delta, (int, float)):
             delta = np.array([delta, delta]) * 0.5
 
@@ -214,15 +214,20 @@ class VariogramAnalyzerPlottingMixin:
         ax.set_xlabel("Head Value")
         ax.set_ylabel("Tail Value")
 
-        title = f"Scatter Plot (Lag: {lag/units.value:.1f}$\pm${delta[0]/units.value:e} {units.name}"
-        angle_title ="" if angle is None else f", Angle: {angle:.0f}° $\pm$ {angle_tolerance:.1f}°)"
+        title = ""
+        if lag is not None:
+            title += f"Lag {lag/units.value} ± {delta[0]/units.value} {units.name}"
+        if angle is not None:
+            if title:
+                title += " @ "
+            title += f"{angle:.0f}° ± {angle_tolerance:.0f}°"
 
-        ax.set_title(title + angle_title)
+        ax.set_title(title)
 
         # set the aspect ratio
         ax.set_aspect(aspect)
 
-        return fig
+        return fig, ax
 
     def plot_dd_scatter_at_lags(self, lags, delta, angle=None, angle_tolerance=90, ncols=2, figsize=(8, 6), **kwargs):
         n = len(lags)
