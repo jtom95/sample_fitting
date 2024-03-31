@@ -222,9 +222,9 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):
     def calculate_empirical_variogram(
         self,
         lag_step: float,
-        angle: Optional[float],
-        tolerance: float,
-        max_range: Optional[float],
+        angle: Optional[float]=None,
+        tolerance: Optional[float]=None,
+        max_range: Optional[float]=None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Calculate the variogram data.
@@ -253,9 +253,9 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):
     def _calculate_variogram_data(
         self,
         lag_step: float,
-        angle: Optional[float],
-        tolerance: float,
-        max_range: Optional[float],
+        angle: Optional[float]=None,
+        tolerance: Optional[float]=None,
+        max_range: Optional[float] = None,
     ) -> Tuple[List[float], List[float]]:
         """
         Calculate the variogram data.
@@ -357,7 +357,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):
                 delta=delta,
                 angle=angle,
                 tolerance=tolerance,
-                max_range=max_range,
+                # max_range=max_range,
                 deg=False,
                 # weighted=weighted,
             )
@@ -370,7 +370,7 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):
         angle=None,
         tolerance=5,
         consider_both_signs=True,
-        max_range=False,
+        # max_range=False,
         deg=True,
         # weighted=False,
     ):
@@ -393,9 +393,9 @@ class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):
         valid_pairs = self.get_pairs_at_lag(
             lag, delta, angle, tolerance, consider_both_signs, deg, register_parameters=True)
 
-        if max_range:
-            distances = cdist(self.positions, self.positions)
-            valid_pairs &= distances <= max_range
+        # if max_range:
+        #     distances = cdist(self.positions, self.positions)
+        #     valid_pairs &= distances <= max_range
 
         D1, D2 = np.meshgrid(self.values, self.values)
         

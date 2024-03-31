@@ -10,7 +10,7 @@ class VariogramAnalyzerPlottingMixin:
         self,
         variogram_dict: Dict,
         ax: plt.Axes = None,
-        units: DistanceUnits = DistanceUnits.mm,
+        distance_units: DistanceUnits = DistanceUnits.mm,
         include_table: bool = True,
         **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes]:
@@ -50,13 +50,13 @@ class VariogramAnalyzerPlottingMixin:
         ax.plot(self.lags, self.semivariances, label="empirical", **kwargs)
         ax.plot(distance_vals, variogram_fitted_vals, label="fitted " + model_type)
         ax.set_title(f"Fitted Variogram")
-        ax.set_xlabel(f"Lag Distance [{units.name}]")
+        ax.set_xlabel(f"Lag Distance [{distance_units.name}]")
         ax.set_ylabel("Semivariance")
         ax.legend()
         ax.grid(True)
 
-        # change the x-axis to the units
-        ax.set_xticklabels([f"{x/units.value:.1f}" for x in ax.get_xticks()])
+        # change the x-axis to the distance_units
+        ax.set_xticklabels([f"{x/distance_units.value:.1f}" for x in ax.get_xticks()])
         # Add model parameters as text
         model_params_str = ""
         model_params = {
@@ -70,8 +70,8 @@ class VariogramAnalyzerPlottingMixin:
                 k = "Range"
                 if isinstance(param, (list, np.ndarray)):
                     param = param[0]
-                param = param / units.value
-                model_params_str += f"{k}: {param:.1f} {units.name}\n"
+                param = param / distance_units.value
+                model_params_str += f"{k}: {param:.1f} {distance_units.name}\n"
                 continue
             else:
                 k = k.capitalize()
@@ -93,7 +93,8 @@ class VariogramAnalyzerPlottingMixin:
     def plot_empirical_variogram(
         self,
         ax: plt.Axes = None,
-        units: DistanceUnits = DistanceUnits.mm,
+        distance_units: DistanceUnits = DistanceUnits.mm,
+        units: str = "",
         **kwargs,
     ) -> plt.Figure:
         """
@@ -122,16 +123,18 @@ class VariogramAnalyzerPlottingMixin:
 
         ax.plot(self.lags, self.semivariances, **kwargs)
         ax.set_title(f"Empirical Variogram")
-        ax.set_xlabel(f"Lag Distance {units.name}")
-        ax.set_ylabel("Semivariance")
+        ax.set_xlabel(f"Lag Distance [{distance_units.name}]")
+        ylabel = "Semivariance"
+        if units != "":
+            ylabel += f" [{units}]"
+        ax.set_ylabel(ylabel)
         ax.grid(True)
 
-        # change the x-axis to the units
-        ax.set_xticklabels([f"{x/units.value:.1f}" for x in ax.get_xticks()])
-
+        # change the x-axis to the distance_units
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/distance_units.value:.1f}'))
         return fig
 
-    def plot_correlogram(self, ax=None, units: DistanceUnits = DistanceUnits.mm, **kwargs):
+    def plot_correlogram(self, ax=None, distance_units: DistanceUnits = DistanceUnits.mm, **kwargs):
         if self.lags is None or self.semivariances is None:
             raise ValueError("Empirical variogram data not available. Call calculate_empirical_variogram() first.")
 
@@ -149,47 +152,86 @@ class VariogramAnalyzerPlottingMixin:
         # Calculate the correlogram (rho_x(d))
         correlogram = covariance / variance
 
-        default_kwargs = dict(marker='o', linestyle='-')
+        default_kwargs = dict(marker='o', linestyle=' ')
         kwargs = {**default_kwargs, **kwargs}
 
         ax.plot(self.lags, correlogram, **kwargs)
-        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/units.value:.1f}'))
-        ax.set_xlabel(f'Lag Distance [{units.name}]')
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/distance_units.value:.1f}'))
+        ax.set_xlabel(f'Lag Distance [{distance_units.name}]')
         ax.set_ylabel('Correlation')
         ax.set_title('Correlogram')
         ax.grid(True)
 
         return fig
 
-    def plot_dd_scatter(self, plots_per_row: int = 3, figsize: Tuple[int, int]=(8, 7), units: DistanceUnits = DistanceUnits.mm, **kwargs) -> Tuple[plt.Figure, np.ndarray]:
+    def plot_dd_scatter(
+        self,
+        plots_per_row: int = 3,
+        figsize: Tuple[int, int] = (8, 5),
+        units: str = "",
+        distance_units: DistanceUnits = DistanceUnits.mm,
+        **kwargs,
+    ) -> Tuple[plt.Figure, np.ndarray]:
         lags = self.lags
         angles = self.angles_
         tolerances = self.tolerances_
         deltas = self.deltas_
 
         if lags is None or angles is None or tolerances is None or deltas is None:
-            raise ValueError("Empirical variogram data not available. Call calculate_empirical_variogram() first.")
+            raise ValueError(
+                "Empirical variogram data not available. Call calculate_empirical_variogram() first."
+            )
 
-        n = len(lags) 
-        nrows = n // plots_per_row + 1
+        n = len(lags)
+        nrows = n // plots_per_row + (
+            0 if n % plots_per_row == 0 else 1
+        )  # Adjusted to correctly calculate the number of rows
         ncols = min(n, plots_per_row)
 
-        fig, ax = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=True)
+        fig, ax = plt.subplots(
+            nrows, ncols, figsize=figsize, constrained_layout=True, sharex=True, sharey=True
+        )
 
         for i, lag in enumerate(lags):
             row = i // ncols
             col = i % ncols
-            self.plot_dd_scatter_at_lag(lag, deltas[i], angle=angles[i], angle_tolerance=tolerances[i], ax=ax[row, col], units=units, **kwargs)
-            ax[row, col].set_title(f"Lag: {lag/units.value:.1f} {units.name}")
-        # remove empty axes
+            self.plot_dd_scatter_at_lag(
+                lag,
+                deltas[i],
+                angle=angles[i],
+                angle_tolerance=tolerances[i],
+                ax=ax[row, col],
+                distance_units=distance_units,
+                units = units,
+                **kwargs,
+            )
+            ax[row, col].set_title(f"Lag: {lag/distance_units.value:.1f} {distance_units.name}")
+
+        # Remove empty axes
         for i in range(n, nrows * ncols):
             row = i // ncols
             col = i % ncols
             fig.delaxes(ax[row, col])
 
+        # Adjust label removal logic
+        # Remove the x labels from the plots that are not in the last row
+        for i in range(nrows - 1):
+            for j in range(ncols):
+                ax[i, j].set_xlabel("")
+
+        for i in range(nrows):
+            for j in range(1, ncols):
+                ax[i, j].set_ylabel("")
+
         return fig, ax
 
-    def plot_dd_scatter_at_lag(self, lag, delta, angle=0, angle_tolerance=90, ax=None, aspect="equal", units: DistanceUnits = DistanceUnits.mm, **kwargs)-> Tuple[plt.Figure, plt.Axes]:
+    def plot_dd_scatter_at_lag(
+        self, lag, delta, 
+        angle=0, angle_tolerance=90, 
+        ax=None, aspect="equal", 
+        units: str = "",
+        distance_units: DistanceUnits = DistanceUnits.mm,
+        **kwargs)-> Tuple[plt.Figure, plt.Axes]:
         if isinstance(delta, (int, float)):
             delta = np.array([delta, delta]) * 0.5
 
@@ -211,12 +253,19 @@ class VariogramAnalyzerPlottingMixin:
         kwargs = {**default_kwargs, **kwargs}
 
         ax.scatter(head_values, tail_values, **kwargs)
-        ax.set_xlabel("Head Value")
-        ax.set_ylabel("Tail Value")
+        xlabel = f"Head Value"
+        ylabel = f"Tail Value"
+        
+        if units != "":
+            xlabel += f" [{units}]"
+            ylabel += f" [{units}]"
+        
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
 
         title = ""
         if lag is not None:
-            title += f"Lag {lag/units.value} ± {delta[0]/units.value} {units.name}"
+            title += f"Lag {lag/distance_units.value} ± {delta[0]/distance_units.value} {distance_units.name}"
         if angle is not None:
             if title:
                 title += " @ "
@@ -256,11 +305,11 @@ class VariogramAnalyzerPlottingMixin:
         consider_both_signs=True,
         ax=None,
         deg=True,
-        units: DistanceUnits = DistanceUnits.mm,
+        distance_units: DistanceUnits = DistanceUnits.mm,
         **kwargs,
     ):
-        if isinstance(units, str):
-            units = DistanceUnits[units]
+        if isinstance(distance_units, str):
+            distance_units = DistanceUnits[distance_units]
         central_point = self._get_central_point(point_coords)
         distances = np.sqrt(np.sum((self.positions - central_point) ** 2, axis=1))
         angles = np.arctan2(
@@ -302,14 +351,14 @@ class VariogramAnalyzerPlottingMixin:
 
         title = ""
         if lag is not None:
-            title += f"Lag {lag/units.value} ± {delta[0]/units.value} {units.name}"
+            title += f"Lag {lag/distance_units.value} ± {delta[0]/distance_units.value} {distance_units.name}"
         if angle is not None:
             if title:
                 title += " @ "
             title += f"{np.rad2deg(angle):.0f}° ± {np.rad2deg(tolerance):.0f}°"
         ax.set_title(title)
 
-        self._format_plot(ax, units)
+        self._format_plot(ax, distance_units)
 
         return fig
 
@@ -320,7 +369,10 @@ class VariogramAnalyzerPlottingMixin:
             central_point = self.positions[np.argmin(np.sum((self.positions - mean_value) ** 2, axis=1))]
             return central_point
         else:
-            return point_coords
+            x, y = point_coords
+            # find the closest point to the given coordinates
+            central_point = self.positions[np.argmin(np.sum((self.positions[:, :2] - np.array([x, y])) ** 2, axis=1))]
+            return central_point
 
     def _setup_plot(self, ax):
         if ax is None:
@@ -343,16 +395,16 @@ class VariogramAnalyzerPlottingMixin:
         ax.scatter(self.positions[valid_points, 0], self.positions[valid_points, 1], **kwargs)
         ax.scatter(central_point[0], central_point[1], c="k", marker="x")
 
-    def _format_plot(self, ax, units):
+    def _format_plot(self, ax, distance_units):
         xlims = (self.positions[:, 0].min(), self.positions[:, 0].max())
         ylims = (self.positions[:, 1].min(), self.positions[:, 1].max())
         ax.set_xlim(xlims)
         ax.set_ylim(ylims)
 
-        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/units.value:.1f}'))
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y/units.value:.1f}'))
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/distance_units.value:.1f}'))
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y/distance_units.value:.1f}'))
 
-        ax.set_xlabel(f"X Coordinate [{units.name}]")
-        ax.set_ylabel(f"Y Coordinate [{units.name}]")
+        ax.set_xlabel(f"X Coordinate [{distance_units.name}]")
+        ax.set_ylabel(f"Y Coordinate [{distance_units.name}]")
         ax.legend()
         ax.grid(True)
