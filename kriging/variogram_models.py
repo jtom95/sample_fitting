@@ -6,12 +6,12 @@ import numpy as np
 @dataclass
 class VariogramModels:
     @staticmethod
-    def linear(d, slope, nugget):
+    def linear(d, nugget, slope):
         """Linear model, m is [slope, nugget]"""
         return slope * d + nugget
 
     @staticmethod
-    def power(d, scale, exponent, nugget):
+    def power(d, nugget, scale, exponent):
         """Power model, m is [scale, exponent, nugget]"""
         return scale * d**exponent + nugget
 

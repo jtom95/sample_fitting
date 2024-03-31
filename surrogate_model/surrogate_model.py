@@ -61,9 +61,9 @@ class SurrogateModel:
         This method predicts scan and std with a single call to the surrogate model.
         However, it only works if the model is of type GaussianProcessRegressor.
         """
-        if not hasattr(self.model, "fit_from_theta"):
-            self.logger.warning("This method is only available for GaussianProcessRegressor models")
-            return self.predict_scan(grid, frequency, **kwargs), None
+        # if not hasattr(self.model, "fit_from_theta"):
+        #     self.logger.warning("This method is only available for GaussianProcessRegressor models")
+        #     return self.predict_scan(grid, frequency, **kwargs), None
 
         if frequency is None:
             frequency = -1

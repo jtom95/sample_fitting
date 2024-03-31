@@ -34,7 +34,7 @@ class OrdinaryKrigingEstimator:
         Returns:
             np.ndarray: The variogram values corresponding to the distances.
         """
-        return self.variogram_model["variogram_model"](distances)
+        return self.variogram_model["variogram_generator"](distances)
 
     def _assemble_kriging_matrix(self, num_sample_points)-> np.ndarray:
         """

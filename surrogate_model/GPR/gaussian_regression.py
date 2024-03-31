@@ -330,8 +330,8 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
                 constant_value = param_value**0.5
 
         if self.scaler:
-            length_scales = np.asarray(length_scales) * self.scaler.scale_[0]
-            length_scale_bounds = np.asarray(length_scale_bounds) * self.scaler.scale_[0]
+            length_scales = np.asarray(length_scales) * np.mean(self.scaler.scale_)
+            length_scale_bounds = np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_)
 
         return {
             'constant_value': constant_value,   
