@@ -36,6 +36,29 @@ class OrdinaryKrigingEstimator:
         """
         return self.variogram_model["variogram_generator"](distances)
 
+    def calculate_weights(self, estimation_point):
+        """
+        Calculate the kriging weights for a given estimation point.
+
+        Args:
+            estimation_point (np.ndarray): The estimation point coordinates.
+
+        Returns:
+            np.ndarray: The kriging weights for the estimation point.
+        """
+        num_sample_points = self.sample_points.shape[0]
+        kriging_matrix = self._assemble_kriging_matrix(num_sample_points)
+
+        estimation_vector = np.zeros((num_sample_points + 1, 1))
+        estimation_vector[:num_sample_points, 0] = -self._calculate_variogram(
+            cdist([estimation_point], self.sample_points)
+        )
+        estimation_vector[num_sample_points, 0] = 1.0
+
+        weights = np.linalg.solve(kriging_matrix, estimation_vector)
+
+        return weights[:-1, 0]
+    
     def _assemble_kriging_matrix(self, num_sample_points)-> np.ndarray:
         """
         Assemble the kriging matrix.

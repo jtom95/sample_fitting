@@ -1,6 +1,8 @@
 from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import cdist
+
 
 from my_packages.EM_fields.scans import Scan, Grid
 from process_scanner_measurements.sample_planes.sample_plane_operations import Transformations
@@ -23,7 +25,7 @@ class OKPlotterMixinClass:
         )
         return fig, ax
 
-    def plot_variogram(self, include_table: bool= True):
+    def plot_variogram(self, include_table: bool= True, units: str=""):
         """
         Plot the fitted variogram model.
         """
@@ -76,30 +78,38 @@ class OKPlotterMixinClass:
         # ax.set_title("Variogram Model")
         # ax.legend()
 
-        fig, ax = self.variogram_analyzer.plot_fitted_variogram(fitted_variogram_dict, units = self.configs.units, include_table=include_table)
+        fig, ax = self.variogram_analyzer.plot_fitted_variogram(
+            fitted_variogram_dict, 
+            distance_units = self.configs.units, 
+            units = units,
+            include_table=include_table)
 
         return fig, ax
 
-    def plot_prediction_comparison(self, grid: Grid, raw_scan: Scan):
+    def plot_prediction_comparison(
+        self, grid: Grid, raw_scan: Scan, 
+        units: str="", figsize:Tuple[int, int] = (10,3), 
+        n_cropped_pixels: Tuple[int, int] = (0, 0),
+        levels=10) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot a comparison of the raw scan, OK prediction, and standard deviation.
         """
-        fig, ax = plt.subplots(1, 3, figsize=(10, 3), constrained_layout=True)
+        fig, ax = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
         ok_scan, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
 
-        fig1, _ = plot_scans([raw_scan, ok_scan], ax=ax[:2])
+        fig1, _ = plot_scans([raw_scan, ok_scan], ax=ax[:2], units=units)
         ax[0].set_title("Raw Scan")
-        ax[1].set_title("GP Scan")
+        ax[1].set_title("Prediction Scan")
         fig1.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
 
-        cropped_std = std.crop_n_pixels(x=(10, 10), y=(10, 10))
-        cropped_std.plot(ax=ax[2], cmap="hot", contour=True, levels=10)
+        cropped_std = std.crop_n_pixels(x=n_cropped_pixels, y=n_cropped_pixels)
+        cropped_std.plot(ax=ax[2], cmap="hot", contour=True, levels=levels, units=units)
         ax[2].set_title("Standard Deviation")
 
         return fig, ax
 
-    def plot_prediction_error(self, X_test, y_test):
+    def plot_prediction_error(self, X_test, y_test, figsize=(8, 6), units: str="") -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot the prediction error at test points.
         """
@@ -115,15 +125,22 @@ class OKPlotterMixinClass:
         y_pred, std = self.predict(X_test, return_std=True)
         error = y_test - y_pred.squeeze()   
 
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=figsize)
         vmax = max(abs(error.min()), abs(error.max()))
         sc = ax.scatter(X_test[:, 0], X_test[:, 1], c=error, cmap="coolwarm", vmin=-vmax, vmax=vmax)
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
+        ax.set_xlabel(f"X ({self.configs.units.name})")
+        ax.set_ylabel(f"Y ({self.configs.units.name})")
+        ax.xaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x/self.configs.units.value:.1f}")
+        )
+        ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x/self.configs.units.value:.1f}")
+        )
+        
         ax.set_title("Prediction Error")
 
         cbar = plt.colorbar(sc, ax=ax)
-        cbar.set_label("Error")
+        cbar.set_label(f"Error ({units})")
 
         return fig, ax
 
@@ -153,3 +170,117 @@ class OKPlotterMixinClass:
         cbar.set_label("Predicted Value")
 
         return fig, ax
+
+    def plot_kriging_weights(self, estimation_point, num_histogram_weights=10, figsize=(8,4), width_ratios=[3, 1]):
+        """
+        Plot the kriging weights for a given estimation point.
+
+        Args:
+            estimation_point (np.ndarray): The estimation point coordinates.
+            ax (matplotlib.axes.Axes, optional): The matplotlib axes to plot on. If None, a new figure and axes will be created.
+            k (int, optional): The number of top weights to include in the histogram. Default is 10.
+
+        Returns:
+            tuple: A tuple containing the matplotlib figure and axes.
+        """
+        if self.kriging_estimator is None:
+            raise ValueError("Kriging estimator has not been fitted yet. Call predict() first.")
+
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(1, 2, width_ratios=width_ratios)
+        ax1 = fig.add_subplot(gs[0])
+        ax2 = fig.add_subplot(gs[1])
+
+        estimation_point = np.asarray(estimation_point)
+        estimation_point_scaled = self.position_scaler.transform(estimation_point.reshape(1, -1)).flatten() / self.configs.units.value
+        weights = self.kriging_estimator.calculate_weights(estimation_point_scaled)
+
+        max_weights = np.max(np.abs(weights))
+
+        q = ax1.scatter(
+            self.X_train[:, 0],
+            self.X_train[:, 1],
+            c=weights,
+            cmap="coolwarm",
+            vmin=-max_weights,
+            vmax=max_weights,
+        )
+        ax1.scatter(
+            estimation_point[0],
+            estimation_point[1],
+            c="black",
+            marker="x",
+            s=100,
+        )
+        ax1.xaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x/self.configs.units.value:.1f}")
+        )
+        ax1.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x/self.configs.units.value:.1f}")
+        )
+        ax1.set_xlabel(f"X ({self.configs.units.name})")
+        ax1.set_ylabel(f"Y ({self.configs.units.name})")
+        ax1.set_title("Kriging Weights")
+        fig.colorbar(q, ax=ax1, label="Weight")
+        
+        k = min(num_histogram_weights, len(weights))
+
+        top_k_indices = np.argsort(weights)[-k:]
+        top_k_weights = weights[top_k_indices]
+        top_k_positions = self.X_train[top_k_indices] / self.configs.units.value
+        
+
+        ax2.barh(np.arange(k), top_k_weights, align="center", alpha=0.5)
+        ax2.set_yticks(np.arange(k))
+        ax2.set_yticklabels([f"({pos[0]:.0f}, {pos[1]:.0f}) {self.configs.units.name}" for pos in top_k_positions])
+        ax2.set_xlabel("Weight")
+        ax2.set_title(f"Top {k} Weights")
+
+        fig.tight_layout()
+
+        return fig, (ax1, ax2)
+
+    # def plot_kriging_weights(self, estimation_point, ax=None):
+    #     """
+    #     Plot the kriging weights for a given estimation point.
+
+    #     Args:
+    #         estimation_point (np.ndarray): The estimation point coordinates.
+    #         ax (matplotlib.axes.Axes, optional): The matplotlib axes to plot on. If None, a new figure and axes will be created.
+
+    #     Returns:
+    #         matplotlib.axes.Axes: The matplotlib axes containing the plot.
+    #     """
+    #     if self.kriging_estimator is None:
+    #         raise ValueError("Kriging estimator has not been fitted yet. Call predict() first.")
+
+    #     if ax is None:
+    #         fig, ax = plt.subplots()
+
+    #     estimation_point_scaled = np.asarray(estimation_point) / self.configs.units.value
+
+    #     weights = self.kriging_estimator.calculate_weights(
+    #         estimation_point_scaled,
+    #     )
+
+    #     q = ax.scatter(
+    #         self.X_scaled[:, 0],
+    #         self.X_scaled[:, 1],
+    #         c=weights,
+    #         cmap="coolwarm",
+    #         vmin=-1,
+    #         vmax=1,
+    #     )
+    #     ax.scatter(
+    #         estimation_point_scaled[0],
+    #         estimation_point_scaled[1],
+    #         c="black",
+    #         marker="x",
+    #         s=100,
+    #     )
+    #     ax.set_xlabel(f"X ({self.configs.units.name})")
+    #     ax.set_ylabel(f"Y ({self.configs.units.name})")
+    #     ax.set_title("Kriging Weights")
+    #     fig.colorbar(q, ax=ax, label="Weight")
+
+    #     return ax

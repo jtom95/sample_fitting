@@ -84,7 +84,14 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
         """
         self.label_scaler = StandardScaler()
         self.position_scaler = StandardScaler(with_std=False)
-
+        
+    def initialize_kriging(self):
+        self.kriging_estimator = OrdinaryKrigingEstimator(
+            variogram_model=self.variogram_model,
+            data=self.y_scaled.squeeze(),
+            sample_points=self.X_scaled,
+        )
+    
     @property
     def scale_factor(self):
         if self.configs.normalize:
@@ -178,6 +185,9 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
         self.variogram_model = self.variogram_analyzer_.fit_variogram(
             model_type=self.configs.variogram_model_type
         )
+        
+        # initialize the kriging estimator
+        self.initialize_kriging()
         return self
 
     def update_variogram(self, variogram_model: Dict[str, float]):
@@ -188,6 +198,9 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
             variogram_model (Dict[str, float]): Updated variogram model parameters.
         """
         self.variogram_model = variogram_model
+        self.initialize_kriging()
+
+
 
     def predict(self, X_predict: np.ndarray, return_std: bool = False) -> np.ndarray:
         """
@@ -215,11 +228,6 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
 
         X_new_scaled = X_new_scaled / self.configs.units.value
 
-        self.kriging_estimator = OrdinaryKrigingEstimator(
-            variogram_model=self.variogram_model,
-            data=self.y_scaled.squeeze(),
-            sample_points=self.X_scaled,
-        )
         y_predicted, var_predicted = self.kriging_estimator.estimate(
             estimation_points=X_new_scaled,
             n_closest_points=self.configs.n_closest_points,

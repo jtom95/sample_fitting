@@ -12,6 +12,7 @@ class VariogramAnalyzerPlottingMixin:
         ax: plt.Axes = None,
         distance_units: DistanceUnits = DistanceUnits.mm,
         include_table: bool = True,
+        units: str = "",
         **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
@@ -48,21 +49,26 @@ class VariogramAnalyzerPlottingMixin:
         kwargs = {**default_kwargs, **kwargs}
 
         ax.plot(self.lags, self.semivariances, label="empirical", **kwargs)
-        ax.plot(distance_vals, variogram_fitted_vals, label="fitted " + model_type)
+        ax.plot(distance_vals, variogram_fitted_vals, label=model_type+" model")
         ax.set_title(f"Fitted Variogram")
         ax.set_xlabel(f"Lag Distance [{distance_units.name}]")
-        ax.set_ylabel("Semivariance")
+        ylabel = "Semivariance"
+        if units != "":
+            ylabel += f" [{units}]"
+        ax.set_ylabel(ylabel)
         ax.legend()
         ax.grid(True)
 
         # change the x-axis to the distance_units
-        ax.set_xticklabels([f"{x/distance_units.value:.1f}" for x in ax.get_xticks()])
+        ax.xaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x/distance_units.value:.1f}")
+        )
         # Add model parameters as text
         model_params_str = ""
         model_params = {
             k: param
             for k, param in fitted_values.items()
-            if k not in ["model_type", "variogram_generator", "model_function"]
+            if k not in ["model_type", "variogram_generator", "model_function", "residuals"]
         }
 
         for k, param in model_params.items():
@@ -255,11 +261,11 @@ class VariogramAnalyzerPlottingMixin:
         ax.scatter(head_values, tail_values, **kwargs)
         xlabel = f"Head Value"
         ylabel = f"Tail Value"
-        
+
         if units != "":
             xlabel += f" [{units}]"
             ylabel += f" [{units}]"
-        
+
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
 
