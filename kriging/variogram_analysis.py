@@ -3,6 +3,8 @@ from typing import Tuple, Optional, List, Dict, Callable, Literal
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from functools import partial
+
 from scipy.optimize import curve_fit, least_squares
 from scipy.spatial.distance import cdist
 
@@ -24,23 +26,32 @@ from ._variogram_analysis_plotter_mixin import VariogramAnalyzerPlottingMixin
 
 class VariogramFitting:
     def fit_variogram(
-        self, 
-        model_type: Optional[Literal["linear", "power", "gaussian", "exponential", "spherical", "hole_effect"]] = None
-        ) -> Dict:
+        self,
+        model_type: Optional[Literal["gaussian", "exponential", "spherical", "hole_effect"]] = None,
+        nugget: Optional[float] = None,
+        sill: Optional[float] = None,
+        range_: Optional[float] = None
+    ) -> Dict:
         """
         Fit variogram models to the empirical variogram data and return the best-fitting model.
+
+        Args:
+            model_type (Optional[Literal["gaussian", "exponential", "spherical", "hole_effect"]]): The type of variogram model to fit.
+            nugget (Optional[float]): The fixed nugget value. If provided, the nugget will not be optimized.
+            sill (Optional[float]): The fixed sill value. If provided, the sill will not be optimized.
+            range_ (Optional[float]): The fixed range value. If provided, the range will not be optimized.
 
         Returns:
             Dict: The fitted variogram model parameters for the best-fitting model.
         """
         if model_type is not None:
-            return self._fit_variogram_model_type(model_type)
-        model_types = ["linear", "power", "gaussian", "exponential", "spherical", "hole_effect"]
+            return self._fit_variogram_model_type(model_type, nugget, sill, range_)
+        model_types = ["gaussian", "exponential", "spherical", "hole_effect"]
         best_model = None
         min_residuals = float("inf")
 
         for model_type in model_types:
-            model = self._fit_variogram_model_type(model_type)
+            model = self._fit_variogram_model_type(model_type, nugget, sill, range_)
             residuals = np.sum(model["residuals"] ** 2)
 
             if residuals < min_residuals:
@@ -50,10 +61,14 @@ class VariogramFitting:
                 best_model = model
 
         return best_model
+    
 
     def _fit_variogram_model_type(
         self,
-        model_type: Literal["linear", "power", "gaussian", "exponential", "spherical", "hole_effect"],
+        model_type: Literal["gaussian", "exponential", "spherical", "hole_effect"],
+        nugget: Optional[float] = None,
+        sill: Optional[float] = None,
+        range_: Optional[float] = None
     ) -> Dict:
         """Fit a variogram model to the empirical variogram data."""
         if self.lags is None or self.semivariances is None:
@@ -62,8 +77,6 @@ class VariogramFitting:
             )
 
         model_functions = {
-            "linear": VariogramModels.linear,
-            "power": VariogramModels.power,
             "gaussian": VariogramModels.gaussian,
             "exponential": VariogramModels.exponential,
             "spherical": VariogramModels.spherical,
@@ -80,31 +93,20 @@ class VariogramFitting:
         fitted_params = self._calculate_variogram_model(
             self.lags,
             self.semivariances,
-            model_type,
+            # model_type,
             model_function,
             weight=True,
+            nugget=nugget,
+            sill=sill,
+            range_=range_
         )
 
-        if model_type == "linear":
-            return_dict = {
-                "nugget": fitted_params[0],
-                "slope": fitted_params[1],
-                "model_type": model_type,
-            }
-        elif model_type == "power":
-            return_dict = {
-                "nugget": fitted_params[0],
-                "scale": fitted_params[1],
-                "exponent": fitted_params[2],
-                "model_type": model_type,
-            }
-        else:
-            return_dict = {
-                "nugget": fitted_params[0],
-                "sill": fitted_params[1],
-                "range_": fitted_params[2],
-                "model_type": model_type,
-            }
+        return_dict = {
+            "nugget": fitted_params[0],
+            "sill": fitted_params[1],
+            "range_": fitted_params[2],
+            "model_type": model_type,
+        }
 
         def variogram_model(lag):
             return model_function(lag, *fitted_params)
@@ -126,57 +128,222 @@ class VariogramFitting:
         cls,
         lags,
         semivariance,
-        variogram_model,
         variogram_function,
         weight,
+        nugget=None,
+        sill=None,
+        range_=None
     ):
         """Function that fits a variogram model when parameters are not specified."""
-        if variogram_model == "linear":
-            x0 = [
-                np.amin(semivariance),
-                (np.amax(semivariance) - np.amin(semivariance)) / (np.amax(lags) - np.amin(lags)),
-            ]
-            bnds = ([0.0, 0.0], [np.amax(semivariance), np.inf])
-        elif variogram_model == "power":
-            x0 = [
-                np.amin(semivariance),
-                (np.amax(semivariance) - np.amin(semivariance)) / (np.amax(lags) - np.amin(lags)),
-                1.1,
-            ]
-            bnds = ([0.0, 0.001, 0.0], [np.amax(semivariance), np.inf, 1.999,])
-        else:
-            x0 = [
-                np.amin(semivariance),
-                np.amax(semivariance) - np.amin(semivariance),
-                0.8 * np.amax(lags),
-            ]
-            bnds = (
-                [0.0, 0.0, 0.0],
-                [np.amax(semivariance), 10.0 * np.amax(semivariance), 1.5 * np.amax(lags)],
-            )
+        if sill is not None:
+            sill = float(sill)
+        if range_ is not None:
+            range_ = float(range_)
+        if nugget is not None:
+            nugget = float(nugget)
+        
+        
+        x0 = [
+            np.amin(semivariance) if nugget is None else nugget,
+            np.amax(semivariance) - np.amin(semivariance) if sill is None else sill,
+            0.8 * np.amax(lags) if range_ is None else range_,
+        ]
+        bnds = (
+            [0.0, 0.0, 0.0],
+            [np.amax(semivariance), 10.0 * np.amax(semivariance), 1.5 * np.amax(lags)],
+        )
+
+        # Create a mask for the fixed parameters
+        fixed_mask = np.array([nugget is not None, sill is not None, range_ is not None])
+
+        # Create arrays for the initial values and bounds
+        x0_arr = np.array(x0)
+        bnds_arr = np.array(bnds)
+
+        # Create a partial function for _variogram_residuals with fixed parameters
+        residuals_func = partial(
+            cls._variogram_residuals,
+            lags=lags,
+            semivariance=semivariance,
+            variogram_function=variogram_function,
+            weight=weight,
+            nugget=nugget,
+            sill=sill,
+            range_=range_
+        )
+
+        # Create a new objective function that takes only the non-fixed parameters
+        def objective(params):
+            final_params = x0_arr.copy()
+            final_params[~fixed_mask] = params
+            return residuals_func(final_params)
+
+        # Remove fixed parameters from initial values and bounds
+        x0_opt = x0_arr[~fixed_mask]
+        bnds_opt = np.array(tuple(zip(bnds_arr[0][~fixed_mask], bnds_arr[1][~fixed_mask]))).T
 
         res = least_squares(
-            cls._variogram_residuals,
-            x0,
-            bounds=bnds,
+            objective,
+            x0_opt,
+            bounds=bnds_opt,
             loss="soft_l1",
-            args=(lags, semivariance, variogram_function, weight),
         )
-        return res.x
+
+        # Insert optimized parameters back into the final parameters
+        final_params = x0_arr.copy()
+        final_params[~fixed_mask] = res.x
+
+        return final_params
 
     @classmethod
-    def _variogram_residuals(cls, params, x, y, variogram_function, weight):
+    def _variogram_residuals(cls, params, lags, semivariance, variogram_function, weight, nugget=None, sill=None, range_=None):
         """Function used in variogram model estimation."""
+        nugget_, sill_, range__ = params
+        if nugget is not None:
+            nugget_ = nugget
+        if sill is not None:
+            sill_ = sill
+        if range_ is not None:
+            range__ = range_
+
         if weight:
-            drange = np.amax(x) - np.amin(x)
+            drange = np.amax(lags) - np.amin(lags)
             k = 2.1972 / (0.1 * drange)
-            x0 = 0.7 * drange + np.amin(x)
-            weights = 1.0 / (1.0 + np.exp(-k * (x0 - x)))
+            x0 = 0.7 * drange + np.amin(lags)
+            weights = 1.0 / (1.0 + np.exp(-k * (x0 - lags)))
             weights /= np.sum(weights)
-            resid = (variogram_function(x, *params) - y) * weights
+            resid = (variogram_function(lags, nugget_, sill_, range__) - semivariance) * weights
         else:
-            resid = variogram_function(x, *params) - y
+            resid = variogram_function(lags, nugget_, sill_, range__) - semivariance
         return resid
+
+    # def _fit_variogram_model_type(
+    #     self,
+    #     model_type: Literal["linear", "power", "gaussian", "exponential", "spherical", "hole_effect"],
+
+    # ) -> Dict:
+    #     """Fit a variogram model to the empirical variogram data."""
+    #     if self.lags is None or self.semivariances is None:
+    #         raise ValueError(
+    #             "Empirical variogram data not available. Call calculate_empirical_variogram() first."
+    #         )
+
+    #     model_functions = {
+    #         "linear": VariogramModels.linear,
+    #         "power": VariogramModels.power,
+    #         "gaussian": VariogramModels.gaussian,
+    #         "exponential": VariogramModels.exponential,
+    #         "spherical": VariogramModels.spherical,
+    #         "hole_effect": VariogramModels.hole_effect,
+    #     }
+
+    #     if model_type not in model_functions:
+    #         raise ValueError(
+    #             f"Invalid model_type. Available options: {', '.join(model_functions.keys())}"
+    #         )
+
+    #     model_function = model_functions[model_type]
+
+    #     fitted_params = self._calculate_variogram_model(
+    #         self.lags,
+    #         self.semivariances,
+    #         model_type,
+    #         model_function,
+    #         weight=True,
+    #     )
+
+    #     if model_type == "linear":
+    #         return_dict = {
+    #             "nugget": fitted_params[0],
+    #             "slope": fitted_params[1],
+    #             "model_type": model_type,
+    #         }
+    #     elif model_type == "power":
+    #         return_dict = {
+    #             "nugget": fitted_params[0],
+    #             "scale": fitted_params[1],
+    #             "exponent": fitted_params[2],
+    #             "model_type": model_type,
+    #         }
+    #     else:
+    #         return_dict = {
+    #             "nugget": fitted_params[0],
+    #             "sill": fitted_params[1],
+    #             "range_": fitted_params[2],
+    #             "model_type": model_type,
+    #         }
+
+    #     def variogram_model(lag):
+    #         return model_function(lag, *fitted_params)
+
+    #     return_dict["model_function"] = model_function
+    #     return_dict["variogram_generator"] = variogram_model
+    #     return_dict["residuals"] = self._variogram_residuals(
+    #         fitted_params,
+    #         self.lags,
+    #         self.semivariances,
+    #         model_function,
+    #         weight=True,
+    #     )
+
+    #     return return_dict
+
+    # @classmethod
+    # def _calculate_variogram_model(
+    #     cls,
+    #     lags,
+    #     semivariance,
+    #     variogram_model,
+    #     variogram_function,
+    #     weight,
+    # ):
+    #     """Function that fits a variogram model when parameters are not specified."""
+    #     if variogram_model == "linear":
+    #         x0 = [
+    #             np.amin(semivariance),
+    #             (np.amax(semivariance) - np.amin(semivariance)) / (np.amax(lags) - np.amin(lags)),
+    #         ]
+    #         bnds = ([0.0, 0.0], [np.amax(semivariance), np.inf])
+    #     elif variogram_model == "power":
+    #         x0 = [
+    #             np.amin(semivariance),
+    #             (np.amax(semivariance) - np.amin(semivariance)) / (np.amax(lags) - np.amin(lags)),
+    #             1.1,
+    #         ]
+    #         bnds = ([0.0, 0.001, 0.0], [np.amax(semivariance), np.inf, 1.999,])
+    #     else:
+    #         x0 = [
+    #             np.amin(semivariance),
+    #             np.amax(semivariance) - np.amin(semivariance),
+    #             0.8 * np.amax(lags),
+    #         ]
+    #         bnds = (
+    #             [0.0, 0.0, 0.0],
+    #             [np.amax(semivariance), 10.0 * np.amax(semivariance), 1.5 * np.amax(lags)],
+    #         )
+
+    #     res = least_squares(
+    #         cls._variogram_residuals,
+    #         x0,
+    #         bounds=bnds,
+    #         loss="soft_l1",
+    #         args=(lags, semivariance, variogram_function, weight),
+    #     )
+    #     return res.x
+
+    # @classmethod
+    # def _variogram_residuals(cls, params, x, y, variogram_function, weight):
+    #     """Function used in variogram model estimation."""
+    #     if weight:
+    #         drange = np.amax(x) - np.amin(x)
+    #         k = 2.1972 / (0.1 * drange)
+    #         x0 = 0.7 * drange + np.amin(x)
+    #         weights = 1.0 / (1.0 + np.exp(-k * (x0 - x)))
+    #         weights /= np.sum(weights)
+    #         resid = (variogram_function(x, *params) - y) * weights
+    #     else:
+    #         resid = variogram_function(x, *params) - y
+    #     return resid
 
 
 class VariogramAnalyzer(VariogramAnalyzerPlottingMixin, VariogramFitting):

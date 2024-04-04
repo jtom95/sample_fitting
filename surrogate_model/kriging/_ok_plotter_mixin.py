@@ -25,7 +25,7 @@ class OKPlotterMixinClass:
         )
         return fig, ax
 
-    def plot_variogram(self, include_table: bool= True, units: str=""):
+    def plot_variogram(self, include_table: bool= True, units: str="", ax=None) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot the fitted variogram model.
         """
@@ -82,7 +82,9 @@ class OKPlotterMixinClass:
             fitted_variogram_dict, 
             distance_units = self.configs.units, 
             units = units,
-            include_table=include_table)
+            include_table=include_table,
+            ax = ax
+            )
 
         return fig, ax
 
@@ -90,18 +92,31 @@ class OKPlotterMixinClass:
         self, grid: Grid, raw_scan: Scan, 
         units: str="", figsize:Tuple[int, int] = (10,3), 
         n_cropped_pixels: Tuple[int, int] = (0, 0),
-        levels=10) -> Tuple[plt.Figure, np.ndarray]:
+        levels=10, **kwargs) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot a comparison of the raw scan, OK prediction, and standard deviation.
         """
         fig, ax = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
         ok_scan, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
-
-        fig1, _ = plot_scans([raw_scan, ok_scan], ax=ax[:2], units=units)
+        
+        vmax_raw = raw_scan.to_Scan().v.max()
+        vmin_raw = raw_scan.to_Scan().v.min()
+        
+        vmax_ok = ok_scan.to_Scan().v.max()
+        vmin_ok = ok_scan.to_Scan().v.min()
+        
+        vmax = max(vmax_raw, vmax_ok)
+        vmin = min(vmin_raw, vmin_ok)
+        
+        raw_scan.plot(ax=ax[0], **kwargs, vmin=vmin, vmax=vmax, units=units, build_colorbar=False)
+        ok_scan.plot(ax=ax[1], **kwargs, vmin=vmin, vmax=vmax, units=units)
+        
+        
+        
         ax[0].set_title("Raw Scan")
         ax[1].set_title("Prediction Scan")
-        fig1.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
+        fig.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
 
         cropped_std = std.crop_n_pixels(x=n_cropped_pixels, y=n_cropped_pixels)
         cropped_std.plot(ax=ax[2], cmap="hot", contour=True, levels=levels, units=units)
@@ -109,7 +124,7 @@ class OKPlotterMixinClass:
 
         return fig, ax
 
-    def plot_prediction_error(self, X_test, y_test, figsize=(8, 6), units: str="") -> Tuple[plt.Figure, np.ndarray]:
+    def plot_prediction_error(self, X_test, y_test, figsize=(8, 6), units: str="", ax=None) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot the prediction error at test points.
         """
@@ -124,8 +139,11 @@ class OKPlotterMixinClass:
 
         y_pred, std = self.predict(X_test, return_std=True)
         error = y_test - y_pred.squeeze()   
-
-        fig, ax = plt.subplots(figsize=figsize)
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = ax.get_figure()
         vmax = max(abs(error.min()), abs(error.max()))
         sc = ax.scatter(X_test[:, 0], X_test[:, 1], c=error, cmap="coolwarm", vmin=-vmax, vmax=vmax)
         ax.set_xlabel(f"X ({self.configs.units.name})")

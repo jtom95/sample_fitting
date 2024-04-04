@@ -205,3 +205,5 @@ class OrdinaryKrigingEstimator:
         estimated_values = estimated_values.reshape(M, N)
         estimation_variances = estimation_variances.reshape(M, N)
         return estimated_values, estimation_variances
+    
+
