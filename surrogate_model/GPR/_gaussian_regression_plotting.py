@@ -251,6 +251,7 @@ class GaussianRegressionPlotterMixin:
         y_train: Optional[np.ndarray] = None,
         cmap: str = "jet",
         aspect: str = "auto",
+        units: str="",
         n_samples: int = 4,
         figs_per_row: int = 2,
         figsize: Tuple[int, int] = (5, 5),
@@ -289,7 +290,7 @@ class GaussianRegressionPlotterMixin:
                 aspect=aspect,
             )
             if include_colorbar:
-                fig.colorbar(im, ax=axx)
+                fig.colorbar(im, ax=axx, label="{}".format(units))
 
             if X_train is not None and y_train is not None:
                 axx.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap=cmap, edgecolors='black')

@@ -88,7 +88,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
     @alpha.setter
     def alpha(self, value):
         self.configs.alpha = value
-    
+
     @property
     def rescaled_alpha(self):
         if not hasattr(self, "label_scaler"):
@@ -155,8 +155,8 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.scaler = scalers.get(method)
 
     def _set_label_scaler(self):
-        self.label_scaler = MinMaxScaler()
-        
+        self.label_scaler = MinMaxScaler(feature_range=(-0.5, 0.5))
+
     @property
     def label_scale_(self):
         if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
@@ -180,10 +180,10 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.kernel = self.kernelM.make_kernel(
             normalize=True, max_range=self.max_range
             )
-        
+
         if rescale_alpha:
             self.alpha = self.rescaled_alpha
-        
+
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
             n_restarts_optimizer=self.n_restarts_optimizer,
@@ -201,7 +201,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
 
         # change the units of the spatial coordinates
         self.y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
-        
+
         if self.configs.rescale_kernel_constant:
             self.kernelM.kernel_non_normalize_params["constant"] *= self.label_scale_
 
@@ -240,12 +240,11 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         """
         if not hasattr(self, "X_scaled"):
             raise ValueError("The model has not been fitted yet.")
-        
+
         X_scaled = self._preprocess_data(X_test, fit=False)
         y_predicted = self.gp.sample_y(X_scaled, n_samples=n_samples, random_state=random_state)
         y_predicted = self.label_scaler.inverse_transform(y_predicted)
         return y_predicted
-
 
     def predict_prior_gp(self, X: np.ndarray, return_std: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
@@ -295,9 +294,9 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         X_scaled = self._preprocess_data(X, fit=True)
         y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
         self.kernel = self.set_kernel_theta(theta, K0)
-        
+
         alpha = self.rescaled_alpha if rescale_alpha else self.alpha
-        
+
         self.gp = GaussianProcessRegressor(
             kernel=self.kernel,
             n_restarts_optimizer=self.n_restarts_optimizer,
@@ -343,7 +342,6 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
                     constant_value = param_value / self.label_scale_  
                 else:
                     constant_value = param_value
-            
 
         if self.scaler:
             length_scales = np.asarray(length_scales) * np.mean(self.scaler.scale_) if length_scales is not None else None
@@ -355,7 +353,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
             'length_scales': length_scales,
             'length_scale_bounds': length_scale_bounds,
         }
-    
+
     @property
     def kernel_constant(self):
         if hasattr(self, "gp") and self.gp is not None:
@@ -365,7 +363,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
             return C / self.label_scale_
         return C
-    
+
     @property
     def kernel_length_scale(self):
         if hasattr(self, "gp") and self.gp is not None:
