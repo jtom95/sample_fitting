@@ -20,7 +20,7 @@ class OKPlotterMixinClass:
         fig, ax = self.variogram_analyzer.plot_dd_scatter(
             plots_per_row=plots_per_row,
             figsize=figsize,
-            units=self.configs.units,
+            distance_units=self.configs.units,
             **kwargs
         )
         return fig, ax

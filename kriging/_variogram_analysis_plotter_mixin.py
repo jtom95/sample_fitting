@@ -113,6 +113,9 @@ class VariogramAnalyzerPlottingMixin:
         Returns:
             plt.Figure: The figure containing the variogram plot.
         """
+        if isinstance(distance_units, str):
+            distance_units = DistanceUnits[distance_units]
+        
         if self.lags is None or self.semivariances is None:
             raise ValueError(
                 "Variogram data has not been calculated. Please call calculate_empirical_variogram first."

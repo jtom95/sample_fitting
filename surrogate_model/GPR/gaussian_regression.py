@@ -27,6 +27,7 @@ class GaussianRegressionModelConfig:
     kernel_base_function: Callable = None
     kernel_kwargs: dict = None
     kernel_non_normalize_hyperparams: dict = None
+    rescale_kernel_constant: bool = False
 
     def __post_init__(self):
         if self.kernel_kwargs is None:
@@ -92,7 +93,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
     def rescaled_alpha(self):
         if not hasattr(self, "label_scaler"):
             raise ValueError("The model has not been fitted yet.")
-        return self.alpha * self.label_scaler.scale_**2
+        return self.alpha * self.label_scale_**2
 
     @property
     def max_range(self):
@@ -155,6 +156,13 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
 
     def _set_label_scaler(self):
         self.label_scaler = MinMaxScaler()
+        
+    @property
+    def label_scale_(self):
+        if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+            if self.label_scaler.scale_ is not None:
+                return self.label_scaler.scale_
+        return 1.0
 
     def _preprocess_data(self, X: np.ndarray, fit=False) -> np.ndarray:
         X = X / self.units.value
@@ -193,6 +201,9 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
 
         # change the units of the spatial coordinates
         self.y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
+        
+        if self.configs.rescale_kernel_constant:
+            self.kernelM.kernel_non_normalize_params["constant"] *= self.label_scale_
 
         self.initalize_gp(X, rescale_alpha=rescale_alpha, **kwargs)
         # X_scaled = self._preprocess_data(X, fit=True)
@@ -263,7 +274,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         y_predicted = self.gp.predict(X_scaled, return_std=return_std)
         if return_std:
             y_predicted, std_devs = y_predicted
-            return self.label_scaler.inverse_transform(y_predicted.reshape(-1, 1)), std_devs / self.label_scaler.scale_
+            return self.label_scaler.inverse_transform(y_predicted.reshape(-1, 1)), std_devs / self.label_scale_
         return self.label_scaler.inverse_transform(y_predicted.reshape(-1, 1))
 
     def extract_theta(self):
@@ -307,7 +318,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         X = self._preprocess_data(X, fit=False)
         _, std = self.gp.predict(X, return_std=True)[1]
 
-        std = std / self.label_scaler.scale_
+        std = std / self.label_scale_
         return std
 
     def get_kernel_params(self) -> dict:
@@ -318,6 +329,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         length_scales = []
         length_scale_bounds = []
 
+        constant_value = None
         for param_name, param_value in self.gp.kernel_.get_params().items():
             if 'length_scale' in param_name:
                 if 'bounds' not in param_name:
@@ -327,17 +339,39 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
 
             # include the ConstantKernel parameter
             if 'constant_value' in param_name and 'bounds' not in param_name:
-                constant_value = param_value**0.5
+                if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                    constant_value = param_value / self.label_scale_  
+                else:
+                    constant_value = param_value
+            
 
         if self.scaler:
-            length_scales = np.asarray(length_scales) * np.mean(self.scaler.scale_)
-            length_scale_bounds = np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_)
+            length_scales = np.asarray(length_scales) * np.mean(self.scaler.scale_) if length_scales is not None else None
+            if not any([isinstance(b, str) or b is None for b in length_scale_bounds]) and not length_scale_bounds is None:
+                length_scale_bounds = np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_)
 
         return {
             'constant_value': constant_value,   
             'length_scales': length_scales,
             'length_scale_bounds': length_scale_bounds,
         }
+    
+    @property
+    def kernel_constant(self):
+        if hasattr(self, "gp") and self.gp is not None:
+            if hasattr(self.gp, "kernel_"):
+                return self.get_kernel_params()["constant_value"]
+        C = self.kernelM.kernel_non_normalize_params.get("constant")
+        if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+            return C / self.label_scale_
+        return C
+    
+    @property
+    def kernel_length_scale(self):
+        if hasattr(self, "gp") and self.gp is not None:
+            if hasattr(self.gp, "kernel_"):
+                return self.get_kernel_params()["length_scales"]
+        return self.kernelM.kernel_params.get("length_scale")
 
 
 class OtherGaussianRegressionModel(GaussianRegressionModel):

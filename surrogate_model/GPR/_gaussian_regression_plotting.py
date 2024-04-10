@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from .kernel_manager import Kernel
+
+from my_packages.EM_fields.scans import Scan, Grid
 
 
 class GaussianRegressionPlotterMixin:
@@ -196,7 +198,7 @@ class GaussianRegressionPlotterMixin:
         """
         if np.ndim(X) == 1:
             X = X.reshape(-1, 1)
-        
+
         if ax is None:
             _, ax = plt.subplots(figsize=(8, 6))
 
@@ -240,6 +242,76 @@ class GaussianRegressionPlotterMixin:
         ax.set_xlabel("X [{}]".format(self.units.name))
         ax.set_ylabel("y")
         ax.legend()
+
+    def plot_posterior_gp_2d(
+        self,
+        x_axis: np.ndarray,
+        y_axis: np.ndarray,
+        X_train: Optional[np.ndarray] = None,
+        y_train: Optional[np.ndarray] = None,
+        cmap: str = "jet",
+        aspect: str = "auto",
+        n_samples: int = 4,
+        figs_per_row: int = 2,
+        figsize: Tuple[int, int] = (5, 5),
+        include_colorbar: bool = True,
+        random_state=None,
+        artistic: bool = False,
+    ):
+        if not np.ndim(x_axis) == 1 or not np.ndim(y_axis) == 1:
+            raise ValueError("x_axis and y_axis must be 1D arrays")
+
+        grid = np.array(np.meshgrid(x_axis, y_axis, indexing="ij"))
+        grid_2d = grid.reshape(2, -1).T
+        if y_train is not None and X_train is not None:
+            self.fit(X_train, y_train)
+
+        n_plots = n_samples
+        n_rows = (n_plots - 1) // figs_per_row + 1
+        n_cols = min(n_plots, figs_per_row)
+        fig, ax = plt.subplots(
+            n_rows, n_cols, figsize=figsize, constrained_layout=True, sharex=True, sharey=True
+        )
+        flat_axes = ax.flatten()
+
+        y_samples_flat = self.sample_gp_candidates(grid_2d, n_samples=n_samples, random_state=random_state).T
+
+        for i in range(n_samples):
+            y_sample_2d = y_samples_flat[i].reshape(grid.shape[1:])
+
+            axx = flat_axes[i]
+
+            im = axx.imshow(
+                y_sample_2d.T,
+                origin="lower",
+                extent=[x_axis[0], x_axis[-1], y_axis[0], y_axis[-1]],
+                cmap=cmap,
+                aspect=aspect,
+            )
+            if include_colorbar:
+                fig.colorbar(im, ax=axx)
+
+            if X_train is not None and y_train is not None:
+                axx.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap=cmap, edgecolors='black')
+
+            axx.set_xlabel("X [{}]".format(self.units.name))
+            axx.set_ylabel("Y [{}]".format(self.units.name))
+            axx.set_title(f"Posterior Sample {i+1}")
+
+        flat_axes[0].xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self.units.value:.1f}"))
+        flat_axes[0].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self.units.value:.1f}"))
+
+        for i in range(n_samples, len(flat_axes)):
+            flat_axes[i].axis("off")
+
+        if artistic:
+            for axx in flat_axes:
+                axx.axis("off")
+                axx.set_title("")
+                axx.get_images()[0].colorbar.remove()
+                fig.patch.set_facecolor('black')
+
+        return fig, ax
 
     def plot_candidates_with_theoretical_stats(
         self,
@@ -296,4 +368,43 @@ class GaussianRegressionPlotterMixin:
         ax.set_xlabel("X [{}]".format(self.units.name))
         ax.set_ylabel("y")
         ax.legend()
+        return fig, ax
+
+    def plot_prediction_comparison(
+        self,
+        grid: Grid,
+        raw_scan: Scan,
+        units: str = "",
+        figsize: Tuple[int, int] = (10, 3),
+        n_cropped_pixels: Tuple[int, int] = (0, 0),
+        levels=10,
+        **kwargs,
+    ) -> Tuple[plt.Figure, np.ndarray]:
+        """
+        Plot a comparison of the raw scan, OK prediction, and standard deviation.
+        """
+        fig, ax = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+
+        ok_scan, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
+
+        vmax_raw = raw_scan.to_Scan().v.max()
+        vmin_raw = raw_scan.to_Scan().v.min()
+
+        vmax_ok = ok_scan.to_Scan().v.max()
+        vmin_ok = ok_scan.to_Scan().v.min()
+
+        vmax = max(vmax_raw, vmax_ok)
+        vmin = min(vmin_raw, vmin_ok)
+
+        raw_scan.plot(ax=ax[0], **kwargs, vmin=vmin, vmax=vmax, units=units, build_colorbar=False)
+        ok_scan.plot(ax=ax[1], **kwargs, vmin=vmin, vmax=vmax, units=units)
+
+        ax[0].set_title("Raw Scan")
+        ax[1].set_title("Prediction Scan")
+        fig.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
+
+        cropped_std = std.crop_n_pixels(x=n_cropped_pixels, y=n_cropped_pixels)
+        cropped_std.plot(ax=ax[2], cmap="hot", contour=True, levels=levels, units=units)
+        ax[2].set_title("Standard Deviation")
+
         return fig, ax

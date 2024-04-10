@@ -141,6 +141,9 @@ class VariogramFitting:
             range_ = float(range_)
         if nugget is not None:
             nugget = float(nugget)
+            
+        if nugget is not None and sill is not None and range_ is not None:
+            return [nugget, sill, range_]
         
         
         x0 = [

@@ -97,9 +97,9 @@ class KernelManager:
             return hyperparam
 
         if isinstance(hyperparam, tuple):
-            return tuple(np.asarray(hyperparam) / self.scaler.scale_[0])
+            return tuple(np.asarray(hyperparam) / np.mean(self.scaler.scale_))
         elif isinstance(hyperparam, (float, int)):
-            return hyperparam / self.scaler.scale_[0]
+            return hyperparam / np.mean(self.scaler.scale_)
         return hyperparam
 
     def make_kernel(
@@ -124,7 +124,7 @@ class KernelManager:
         if max_range:
             # normalize self.max_range
             if self.scaler:
-                max_range = max_range / self.scaler.scale_[0]
+                max_range = max_range / np.mean(self.scale_[0])
             else:
                 max_range = max_range
             kernel *= StepKernel(max_range)
