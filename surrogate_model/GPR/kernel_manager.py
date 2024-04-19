@@ -51,7 +51,7 @@ class KernelManager:
             return {**self.kernel_normalize_params, **self.kernel_non_normalize_params}
         else:
             normalized_params = {
-                key: self._normalize_hyperparam(value)
+                key: self._normalize_hyperparam(key, value)
                 for key, value in self.kernel_normalize_params.items()
             }
             return {**normalized_params, **self.kernel_non_normalize_params}
@@ -85,7 +85,7 @@ class KernelManager:
         self.scaler.fit(X)
 
     def _normalize_hyperparam(
-        self, hyperparam: Union[float, int, tuple]
+        self, key:str, hyperparam: Union[float, int, tuple]
     ) -> Union[float, int, tuple]:
         """
         Normalize a hyperparameter based on the scaler.
@@ -95,12 +95,41 @@ class KernelManager:
         """
         if self.scaler is None:
             return hyperparam
-
-        if isinstance(hyperparam, tuple):
-            return tuple(np.asarray(hyperparam) / np.mean(self.scaler.scale_))
-        elif isinstance(hyperparam, (float, int)):
-            return hyperparam / np.mean(self.scaler.scale_)
-        return hyperparam
+        
+        if key == "length_scale":
+            if isinstance(hyperparam, (tuple, list)) and len(hyperparam) == 2:
+                return list(np.asarray(hyperparam) / self.scaler.scale_)
+            elif isinstance(hyperparam, (float, int)):
+                return hyperparam / np.mean(self.scaler.scale_)
+        elif key == "length_scale_bounds":
+            if isinstance(hyperparam, str):
+                if hyperparam == "fixed":
+                    return "fixed"
+                else:
+                    raise ValueError(f"Unsupported length_scale_bounds value: {hyperparam}")
+            elif isinstance(hyperparam, (tuple, list)) and len(hyperparam) == 2:
+                if isinstance(hyperparam[0], (float, int)):
+                    # single length scale bound
+                    if hyperparam[0] == hyperparam[1]:
+                        return "fixed"
+                    return tuple(np.asarray(hyperparam) / np.mean(self.scaler.scale_))
+                elif isinstance(hyperparam[0], (tuple, list)):
+                    # multiple length scale bounds
+                    bound0, bound1 = hyperparam
+                    return (
+                        tuple(np.asarray(bound0) / self.scaler.scale_[0]),
+                        tuple(np.asarray(bound1) / self.scaler.scale_[1]),
+                    )
+                else:
+                    raise ValueError(f"Unsupported length_scale_bounds value: {hyperparam}")
+            else:
+                raise ValueError(f"Unsupported length_scale_bounds value: {hyperparam}")
+        else:
+            if isinstance(hyperparam, tuple):
+                return tuple(np.asarray(hyperparam) / np.mean(self.scaler.scale_))
+            elif isinstance(hyperparam, (float, int)):
+                return hyperparam / np.mean(self.scaler.scale_)
+            return hyperparam
 
     def make_kernel(
         self, normalize: bool = True, max_range: Optional[Union[float, int]] = None
@@ -113,7 +142,7 @@ class KernelManager:
         :return: Kernel object.
         """
         if not normalize or not self.scaler:
-            all_params = {**self.kernel_params, **self.kernel_non_normalize_params}
+            all_params = {**self.kernel_normalize_params, **self.kernel_non_normalize_params}
             kernel = self.kernel_function(**all_params)
 
         kernel = self.kernel_function(**self.kernel_params)

@@ -16,6 +16,29 @@ from .kernel_manager import KernelManager
 from ..abstract_sample_model import AbstractSampleModel
 from ..surrogate_model import SurrogateModel
 
+from sklearn.base import TransformerMixin, BaseEstimator
+
+
+class MeanZeroScaler(TransformerMixin, BaseEstimator):
+    def __init__(self):
+        self.scale_ = None
+        self.min_ = None
+        self.max_ = None
+
+    def fit(self, X):
+        self.mean_ = np.mean(X)
+        self.min_ = np.min(X)
+        self.max_ = np.max(X)
+        self.scale_ = 1/(self.max_ - self.min_)
+        return self
+
+    def transform(self, X):
+        X_scaled = (X - self.mean_) * self.scale_
+        return X_scaled
+
+    def inverse_transform(self, X):
+        return X / self.scale_ + self.mean_
+
 
 @dataclass
 class GaussianRegressionModelConfig:
@@ -155,7 +178,8 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.scaler = scalers.get(method)
 
     def _set_label_scaler(self):
-        self.label_scaler = MinMaxScaler(feature_range=(-0.5, 0.5))
+        # self.label_scaler = MinMaxScaler(feature_range=(-0.5, 0.5))
+        self.label_scaler = MeanZeroScaler()
 
     @property
     def label_scale_(self):
@@ -203,7 +227,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
 
         if self.configs.rescale_kernel_constant:
-            self.kernelM.kernel_non_normalize_params["constant"] *= self.label_scale_
+            self.kernelM.kernel_non_normalize_params["constant"] *= self.label_scale_**2
 
         self.initalize_gp(X, rescale_alpha=rescale_alpha, **kwargs)
         # X_scaled = self._preprocess_data(X, fit=True)
@@ -325,43 +349,75 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         Retrieve the kernel parameters (length scales and bounds).
         :return: Dictionary containing the length scales and bounds.
         """
-        length_scales = []
-        length_scale_bounds = []
-
+        length_scales = None
+        length_scale_bounds = None
         constant_value = None
+        constant_value_bounds = None
+
         for param_name, param_value in self.gp.kernel_.get_params().items():
             if 'length_scale' in param_name:
                 if 'bounds' not in param_name:
-                    length_scales.append(param_value)
+                    length_scales = param_value
                 else:
-                    length_scale_bounds.append(param_value)
+                    length_scale_bounds = param_value
 
-            # include the ConstantKernel parameter
-            if 'constant_value' in param_name and 'bounds' not in param_name:
-                if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
-                    constant_value = param_value / self.label_scale_  
+            # include the ConstantKernel parameter - renormalize the constant value
+            if 'constant_value' in param_name:
+                if 'bounds' not in param_name:
+                    if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                        constant_value = param_value / self.label_scale_ ** 2
+                    else:
+                        constant_value = param_value
                 else:
-                    constant_value = param_value
+                    if isinstance(param_value, str):
+                        constant_value_bounds = param_value
+                    elif self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                        constant_value_bounds = tuple(np.asarray(param_value) / self.label_scale_ ** 2)
+                    else:
+                        constant_value_bounds = param_value
 
+        # renormalize the length scales
         if self.scaler:
-            length_scales = np.asarray(length_scales) * np.mean(self.scaler.scale_) if length_scales is not None else None
-            if not any([isinstance(b, str) or b is None for b in length_scale_bounds]) and not length_scale_bounds is None:
-                length_scale_bounds = np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_)
+            if length_scales is not None:
+                if isinstance(length_scales, (float, int)):
+                    length_scales *= np.mean(self.scaler.scale_)
+                elif isinstance(length_scales, (list, tuple)):
+                    if len(length_scales) == 2:
+                        length_scales =  tuple(np.asarray(length_scales) * self.scaler.scale_)
+                    else:
+                        raise ValueError("The length scales must be a list or tuple of length 2.")
+            if length_scale_bounds is not None:
+                if isinstance(length_scale_bounds, str):
+                    pass
+                elif isinstance(length_scale_bounds, (list, tuple)):
+                    if len(length_scale_bounds) != 2:
+                        raise ValueError("The length scale bounds must be a list or tuple of length 2.")
+                    if isinstance(length_scale_bounds[0], (list, tuple)):
+                        if len(length_scale_bounds[0]) != 2:
+                            raise ValueError("If there are two bounds, they must be a list or tuple of length 2.")
+                        bound1, bound2 = length_scale_bounds
+                        length_scale_bounds = (bound1[0] * self.scaler.scale_[0], bound2[1] * self.scaler.scale_[1])
+
+                    elif isinstance(length_scale_bounds[0], (float, int)):
+                        length_scale_bounds = tuple(np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_))
+                    else:
+                        raise ValueError("The length scale bounds must be a list or tuple of length 2.")
 
         return {
-            'constant_value': constant_value,   
             'length_scales': length_scales,
             'length_scale_bounds': length_scale_bounds,
+            'constant_value': constant_value,   
+            'constant_value_bounds': constant_value_bounds,
         }
 
     @property
     def kernel_constant(self):
-        if hasattr(self, "gp") and self.gp is not None:
-            if hasattr(self.gp, "kernel_"):
-                return self.get_kernel_params()["constant_value"]
-        C = self.kernelM.kernel_non_normalize_params.get("constant")
-        if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
-            return C / self.label_scale_
+        if hasattr(self, "gp") and self.gp is not None and hasattr(self.gp, "kernel_"):
+            C = self.get_kernel_params()["constant_value"]
+        else:
+            C = self.kernelM.kernel_non_normalize_params.get("constant")
+        if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+            return C / self.label_scale_**2 
         return C
 
     @property

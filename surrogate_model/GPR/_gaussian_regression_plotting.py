@@ -379,6 +379,7 @@ class GaussianRegressionPlotterMixin:
         figsize: Tuple[int, int] = (10, 3),
         n_cropped_pixels: Tuple[int, int] = (0, 0),
         levels=10,
+        artistic: bool = False,
         **kwargs,
     ) -> Tuple[plt.Figure, np.ndarray]:
         """
@@ -386,26 +387,27 @@ class GaussianRegressionPlotterMixin:
         """
         fig, ax = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
-        ok_scan, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
+        post_mean, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
 
         vmax_raw = raw_scan.to_Scan().v.max()
         vmin_raw = raw_scan.to_Scan().v.min()
 
-        vmax_ok = ok_scan.to_Scan().v.max()
-        vmin_ok = ok_scan.to_Scan().v.min()
+        vmax_ok = post_mean.to_Scan().v.max()
+        vmin_ok = post_mean.to_Scan().v.min()
 
         vmax = max(vmax_raw, vmax_ok)
         vmin = min(vmin_raw, vmin_ok)
 
-        raw_scan.plot(ax=ax[0], **kwargs, vmin=vmin, vmax=vmax, units=units, build_colorbar=False)
-        ok_scan.plot(ax=ax[1], **kwargs, vmin=vmin, vmax=vmax, units=units)
+        raw_scan.plot(ax=ax[0], **kwargs, vmin=vmin, vmax=vmax, units=units, build_colorbar=False, artistic=artistic)
+        post_mean.plot(ax=ax[1], **kwargs, vmin=vmin, vmax=vmax, units=units, artistic=artistic)
 
         ax[0].set_title("Raw Scan")
         ax[1].set_title("Prediction Scan")
         fig.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
 
         cropped_std = std.crop_n_pixels(x=n_cropped_pixels, y=n_cropped_pixels)
-        cropped_std.plot(ax=ax[2], cmap="hot", contour=True, levels=levels, units=units)
+        contour = (cropped_std.v.max() - cropped_std.v.min()) / levels > 1e-5
+        cropped_std.plot(ax=ax[2], cmap="hot", contour=contour, levels=levels, units=units, artistic=artistic)
         ax[2].set_title("Standard Deviation")
-
+        
         return fig, ax

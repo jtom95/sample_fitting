@@ -70,7 +70,7 @@ class SurrogateModel:
 
         shape2d = (grid.shape[1], grid.shape[2])
         points = grid.create_position_matrix()
-        points2d = points[:, 0:2]
+        points2d = points[:, :2]
         predictions, std = self.model.predict(points2d, return_std=True)
 
         predictions = predictions.reshape(shape2d)
