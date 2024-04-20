@@ -144,6 +144,8 @@ class VariogramAnalyzerPlottingMixin:
         return fig
 
     def plot_correlogram(self, ax=None, distance_units: DistanceUnits = DistanceUnits.mm, **kwargs):
+        if isinstance(distance_units, str):
+            distance_units = DistanceUnits[distance_units]
         if self.lags is None or self.semivariances is None:
             raise ValueError("Empirical variogram data not available. Call calculate_empirical_variogram() first.")
 

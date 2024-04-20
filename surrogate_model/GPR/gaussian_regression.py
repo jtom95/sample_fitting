@@ -1,4 +1,4 @@
-from typing import Union, List, Tuple, Optional, Callable
+from typing import Union, List, Tuple, Optional, Callable, Iterable
 from copy import deepcopy
 import logging
 from dataclasses import dataclass
@@ -386,7 +386,7 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
             if length_scales is not None:
                 if isinstance(length_scales, (float, int)):
                     length_scales *= np.mean(self.scaler.scale_)
-                elif isinstance(length_scales, (list, tuple)):
+                elif isinstance(length_scales, Iterable):
                     if len(length_scales) == 2:
                         length_scales =  tuple(np.asarray(length_scales) * self.scaler.scale_)
                     else:
@@ -394,10 +394,10 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
             if length_scale_bounds is not None:
                 if isinstance(length_scale_bounds, str):
                     pass
-                elif isinstance(length_scale_bounds, (list, tuple)):
+                elif isinstance(length_scale_bounds, Iterable):
                     if len(length_scale_bounds) != 2:
                         raise ValueError("The length scale bounds must be a list or tuple of length 2.")
-                    if isinstance(length_scale_bounds[0], (list, tuple)):
+                    if isinstance(length_scale_bounds[0], Iterable):
                         if len(length_scale_bounds[0]) != 2:
                             raise ValueError("If there are two bounds, they must be a list or tuple of length 2.")
                         bound1, bound2 = length_scale_bounds

@@ -28,7 +28,7 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
         position_grid: Optional[Grid] = None,
         frequency_indices: Optional[List[int]] = None,
         normalize: bool = True,
-        absolute_correlation_values: bool = True
+        clip_negative_correlation: bool = True
     ):
         """
         Initialize the CorrelationAnalyzer.
@@ -55,7 +55,7 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
         self.frequency_indices_order_dict = {
             freq_index: ii for ii, freq_index in enumerate(self.frequency_indices)
         }
-        self.absolute_correlation_values = absolute_correlation_values
+        self.clip_negative_correlation = clip_negative_correlation
 
         self.x_correlation_matrix = self.get_correlation_matrix(axis=1)
         self.y_correlation_matrix = self.get_correlation_matrix(axis=0)
@@ -153,7 +153,7 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
                 correlation_matrix = df.T.corr()
             correlation_matrices.append(correlation_matrix)
         correlation_matrix = np.stack(correlation_matrices, axis=-1)
-        if self.absolute_correlation_values:
+        if self.clip_negative_correlation:
             # correlation_matrix = np.abs(correlation_matrix)
             correlation_matrix = np.clip(correlation_matrix, 0, 1)
         return correlation_matrix
@@ -181,7 +181,7 @@ class CorrelationAnalyzer(CorrelationPlotterMixin):
             mean_matrices.append(mean_matrix)
 
         mean_matrix = np.stack(mean_matrices, axis=-1)
-        if self.absolute_correlation_values:
+        if self.clip_negative_correlation:
             # mean_matrix = np.abs(mean_matrix)
             mean_matrix = np.clip(mean_matrix, 0, 1)
         return mean_matrix
