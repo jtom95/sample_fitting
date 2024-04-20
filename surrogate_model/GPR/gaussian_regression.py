@@ -227,8 +227,13 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
         self.y_scaled = self.label_scaler.fit_transform(y.reshape(-1, 1))
 
         if self.configs.rescale_kernel_constant:
-            self.kernelM.kernel_non_normalize_params["constant"] *= self.label_scale_**2
-
+            for key, value in self.kernelM.kernel_non_normalize_params.items():
+                if key in ("constant", "variance", "constant_value"):
+                    if "bounds" not in key:
+                        self.kernelM.kernel_non_normalize_params[key] *= self.label_scale_**2
+                    else :
+                        self.kernelM.kernel_non_normalize_params[key] = tuple(np.asarray(value) * self.label_scale_**2)
+                        
         self.initalize_gp(X, rescale_alpha=rescale_alpha, **kwargs)
         # X_scaled = self._preprocess_data(X, fit=True)
         # self.kernelM.set_scaler(self.scaler)
@@ -364,14 +369,14 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
             # include the ConstantKernel parameter - renormalize the constant value
             if 'constant_value' in param_name:
                 if 'bounds' not in param_name:
-                    if self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                    if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
                         constant_value = param_value / self.label_scale_ ** 2
                     else:
                         constant_value = param_value
                 else:
                     if isinstance(param_value, str):
                         constant_value_bounds = param_value
-                    elif self.configs.rescale_kernel_constant and hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                    elif hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
                         constant_value_bounds = tuple(np.asarray(param_value) / self.label_scale_ ** 2)
                     else:
                         constant_value_bounds = param_value
@@ -413,12 +418,18 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
     @property
     def kernel_constant(self):
         if hasattr(self, "gp") and self.gp is not None and hasattr(self.gp, "kernel_"):
-            C = self.get_kernel_params()["constant_value"]
+            return self.get_kernel_params()["constant_value"]
         else:
             C = self.kernelM.kernel_non_normalize_params.get("constant")
-        if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
-            return C / self.label_scale_**2 
-        return C
+            if C is None:
+                C = self.kernelM.kernel_non_normalize_params.get("variance")
+            if C is None:
+                C = self.kernelM.kernel_params.get("constant_value")
+            else:
+                return C
+            if hasattr(self, "label_scaler") and hasattr(self.label_scaler, "scale_"):
+                return C / self.label_scale_**2 
+            return C
 
     @property
     def kernel_length_scale(self):
