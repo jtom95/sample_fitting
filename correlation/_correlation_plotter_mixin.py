@@ -166,6 +166,7 @@ class CorrelationPlotterMixin:
         aspect="auto",
         use_position_grid: bool = False,
         n_twin_labels: int = 3,
+        figsize=(8, 6),
         **kwargs,
     ):
         """
@@ -188,7 +189,7 @@ class CorrelationPlotterMixin:
         combined_corr = self.combined_correlation_matrix[..., index_position]
 
         if ax is None:
-            fig, ax = plt.subplots(constrained_layout=True)
+            fig, ax = plt.subplots(constrained_layout=True, figsize=figsize)
         else: 
             fig = ax.figure
 

@@ -1,4 +1,4 @@
-from typing import Callable, Union, Optional
+from typing import Callable, Union, Optional, Iterable
 import numpy as np
 from sklearn.gaussian_process.kernels import Kernel, Matern, ConstantKernel as C
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -95,9 +95,9 @@ class KernelManager:
         """
         if self.scaler is None:
             return hyperparam
-        
+
         if key == "length_scale":
-            if isinstance(hyperparam, (tuple, list)) and len(hyperparam) == 2:
+            if isinstance(hyperparam, Iterable) and len(hyperparam) == 2:
                 return list(np.asarray(hyperparam) / self.scaler.scale_)
             elif isinstance(hyperparam, (float, int)):
                 return hyperparam / np.mean(self.scaler.scale_)
@@ -107,13 +107,13 @@ class KernelManager:
                     return "fixed"
                 else:
                     raise ValueError(f"Unsupported length_scale_bounds value: {hyperparam}")
-            elif isinstance(hyperparam, (tuple, list)) and len(hyperparam) == 2:
+            elif isinstance(hyperparam, Iterable) and len(hyperparam) == 2:
                 if isinstance(hyperparam[0], (float, int)):
                     # single length scale bound
                     if hyperparam[0] == hyperparam[1]:
                         return "fixed"
                     return tuple(np.asarray(hyperparam) / np.mean(self.scaler.scale_))
-                elif isinstance(hyperparam[0], (tuple, list)):
+                elif isinstance(hyperparam[0], Iterable):
                     # multiple length scale bounds
                     bound0, bound1 = hyperparam
                     return (

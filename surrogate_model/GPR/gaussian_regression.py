@@ -401,7 +401,10 @@ class GaussianRegressionModel(AbstractSampleModel, GaussianRegressionPlotterMixi
                         if len(length_scale_bounds[0]) != 2:
                             raise ValueError("If there are two bounds, they must be a list or tuple of length 2.")
                         bound1, bound2 = length_scale_bounds
-                        length_scale_bounds = (bound1[0] * self.scaler.scale_[0], bound2[1] * self.scaler.scale_[1])
+                        length_scale_bounds = (
+                            tuple(np.asarray(bound1) * self.scaler.scale_[0]), 
+                            tuple(np.asarray(bound2) * self.scaler.scale_[1])
+                            )
 
                     elif isinstance(length_scale_bounds[0], (float, int)):
                         length_scale_bounds = tuple(np.asarray(length_scale_bounds) * np.mean(self.scaler.scale_))
