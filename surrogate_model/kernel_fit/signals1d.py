@@ -242,7 +242,7 @@ class ModelKernel1D:
         final_weight = 1 - sum(weights)
         all_weights = list(weights) + [final_weight]
         return sum(
-            weight * ModelAutocorrelation1D.rbf_function(r, constant, scale)
+            weight * ModelKernel1D.rbf_function(r, constant, scale)
             for scale, weight in zip(scales, all_weights)
         )
 
@@ -255,8 +255,8 @@ class ModelKernel1D:
     @staticmethod
     def hybrid_kernel(r, constant, nu, scale_matern, scale_rbf, r0, sigma):
         w = 1 / (1 + np.exp((r - r0) / sigma))
-        matern = ModelAutocorrelation1D.matern_function(r, constant, scale_matern, nu)
-        rbf = ModelAutocorrelation1D.rbf_function(r, constant, scale_rbf)
+        matern = ModelKernel1D.matern_function(r, constant, scale_matern, nu)
+        rbf = ModelKernel1D.rbf_function(r, constant, scale_rbf)
         return w * matern + (1 - w) * rbf
 
     @classmethod

@@ -10,8 +10,8 @@ class SignalAutocorrelation1D:
         self.y_values = y_values
         self.autocorr = None
         self.normalize = normalize
-        self.step = None
-        self.steps = None
+        self.lag = None
+        self.lags = None
 
     def plot_data(self, ax=None, figsize=(10, 3)):
         if ax is None:
@@ -26,11 +26,11 @@ class SignalAutocorrelation1D:
 
     def calculate_autocorrelation(self):
         y_normalized = self.y_values / np.max(self.y_values) if self.normalize else self.y_values
-        self.autocorr = np.correlate(y_normalized, y_normalized, mode="full")[
-            len(y_normalized) - 1 :
+        self.autocorr = np.correlate(y_normalized, y_normalized, mode="same")[
+            int(len(y_normalized)//2 - 1) :
         ]
-        self.step = self.x_values[1] - self.x_values[0]
-        self.steps = np.arange(0, len(self.autocorr)) * self.step
+        self.lag = self.x_values[1] - self.x_values[0]
+        self.lags = np.arange(0, len(self.autocorr)) * self.lag
         return self.autocorr
 
     def plot_autocorrelation(self, ax=None, figsize=(10, 3)):
@@ -38,9 +38,9 @@ class SignalAutocorrelation1D:
             fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
         else:
             fig = ax.get_figure()
-        if self.autocorr is None or self.steps is None:
+        if self.autocorr is None or self.lags is None:
             self.calculate_autocorrelation()
-        ax.plot(self.steps, self.autocorr)
+        ax.plot(self.lags, self.autocorr)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x*1e3:.0f}"))
         ax.set_xlabel("x [mm]")
         ax.set_ylabel("Autocorrelation")

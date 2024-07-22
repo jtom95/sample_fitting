@@ -25,7 +25,12 @@ class OKPlotterMixinClass:
         )
         return fig, ax
 
-    def plot_variogram(self, include_table: bool= True, units: str="", ax=None) -> Tuple[plt.Figure, np.ndarray]:
+    def plot_variogram(
+        self, include_table: bool= True, 
+        units: str="", ax=None, 
+        legend_loc: str="best",
+        **kwargs
+        ) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot the fitted variogram model.
         """
@@ -83,7 +88,9 @@ class OKPlotterMixinClass:
             distance_units = self.configs.units, 
             units = units,
             include_table=include_table,
-            ax = ax
+            ax = ax,
+            legend_loc=legend_loc,
+            **kwargs
             )
 
         return fig, ax

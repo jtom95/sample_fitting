@@ -68,20 +68,24 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
         self.logger = logging.getLogger(__name__)
         # update the configs
         self.configs = configs
+        self.reset(**kwargs)
+        if self.configs.normalize:
+            self._set_scalers()
+        
+    
+    def reset(self, **kwargs):
         for key, value in kwargs.items():
             if hasattr(self.configs, key):
                 setattr(self.configs, key, value)
             else:
                 self.logger.warning(f"Invalid config key: {key}")
-        if self.configs.normalize:
-            self._set_scalers()
-
         self.variogram_analyzer_ = None
         self.kriging_estimator = None
 
         self.estimation_points_ = None
         self.estimated_values_ = None
         self.estimation_variances_ = None
+        return self
 
     def _set_scalers(self):
         """
