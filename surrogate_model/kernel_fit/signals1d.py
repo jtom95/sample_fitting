@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.special import kv, gamma
+from sklearn.gaussian_process.kernels import Kernel, RBF, Matern, ConstantKernel as C
 
 
 class ModelKernel1D:
@@ -12,6 +13,7 @@ class ModelKernel1D:
         self.constant = None
         self.scale = None
         self.nu = None
+        self.kernel = None
 
     def plot_data(self, ax=None, figsize=(10, 3)):
         if ax is None:
@@ -28,17 +30,27 @@ class ModelKernel1D:
         self.constant, self.scale = self.fit_rbf_length_scale_static(
             self.x_values, self.y_values, method=method, bounds=bounds
         )
+        self.kernel = self.constant * RBF(length_scale=self.scale, length_scale_bounds="fixed")
         return self.constant, self.scale
 
     def fit_multi_rbf(self, n, method="Nelder-Mead", bounds=None):
         self.constant, self.scales, self.weights = self.fit_multi_rbf_parameters_static(
             self.x_values, self.y_values, n, method=method, bounds=bounds
         )
+        rbf_list = []
+        self.weights = list(self.weights) + [1 - sum(self.weights)]
+        for scale, weight in zip(self.scales, self.weights):
+            rbf_list.append(weight * RBF(length_scale=scale, length_scale_bounds="fixed"))
+        
+        self.kernel = self.constant * np.sum(rbf_list)
         return self.constant, self.scales, self.weights
 
     def fit_matern(self, method="Nelder-Mead", bounds=-1):
         self.constant, self.scale, self.nu = self.fit_matern_parameters_static(
             self.x_values, self.y_values, method=method, bounds=bounds
+        )
+        self.kernel = self.constant*Matern(
+            length_scale=self.scale, length_scale_bounds="fixed", nu=self.nu
         )
         return self.constant, self.scale, self.nu
 
@@ -48,6 +60,17 @@ class ModelKernel1D:
                 self.x_values, self.y_values, method=method, bounds=bounds
             )
         )
+        weight1 = 1 / (1 + np.exp((self.x_values[-1] - self.r0) / self.sigma))
+        weight2 = 1 - weight1
+        self.kernel = self.constant * (
+            weight1 * Matern(
+                length_scale=self.scale_matern, length_scale_bounds="fixed", nu=self.nu
+            )
+            + weight2 * RBF(
+                length_scale=self.scale_rbf, length_scale_bounds="fixed"
+                )
+            )
+
         return self.constant, self.scale_matern, self.scale_rbf, self.nu, self.r0, self.sigma
 
     def plot_rbf_fit(
@@ -236,14 +259,16 @@ class ModelKernel1D:
 
     @staticmethod
     def multi_rbf_kernel(r, constant, scales, weights):
-        if len(scales) != len(weights) + 1:
+        if len(scales) == len(weights):
+            pass
+        elif len(scales) == len(weights) + 1:
+            weights = list(weights) + [1 - sum(weights)]
+        else:
             raise ValueError("The weights must be the same as the number of RBF components minus 1")
 
-        final_weight = 1 - sum(weights)
-        all_weights = list(weights) + [final_weight]
         return sum(
             weight * ModelKernel1D.rbf_function(r, constant, scale)
-            for scale, weight in zip(scales, all_weights)
+            for scale, weight in zip(scales, weights)
         )
 
     @staticmethod

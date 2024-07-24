@@ -57,7 +57,7 @@ class OrdinaryKrigingModelConfigs:
 
 
 class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
-    def __init__(self, configs: OrdinaryKrigingModelConfigs, **kwargs):
+    def __init__(self, configs: OrdinaryKrigingModelConfigs = None, **kwargs):
         """
         Initialize the OrdinaryKrigingModel.
 
@@ -67,6 +67,8 @@ class OrdinaryKrigingModel(AbstractSampleModel, OKPlotterMixinClass):
         """
         self.logger = logging.getLogger(__name__)
         # update the configs
+        if configs is None:
+            configs = OrdinaryKrigingModelConfigs()
         self.configs = configs
         self.reset(**kwargs)
         if self.configs.normalize:
