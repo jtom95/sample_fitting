@@ -162,10 +162,11 @@ class GPR():
             ax.set_title("Prediction")
 
         if inlcude_samples:
+            training_X = self.gp.X_train_
             for axx in ax:
                 axx.scatter(
-                    X.ravel(),
-                    Y.ravel(),
+                    training_X[:, 0],
+                    training_X[:, 1],
                     color="w",
                     edgecolor="k",
                     s=marker_size,
