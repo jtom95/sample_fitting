@@ -1,5 +1,5 @@
 from typing import Tuple, Optional, List, Union
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel as C
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel as C, Matern
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -41,7 +41,7 @@ class GPRonScanR:
 
         self._check_scanR()
         self._extract_scans(frequency=frequency)
-        
+
     @property
     def noise_level_Ez(self):
         noise_key = None
@@ -54,7 +54,6 @@ class GPRonScanR:
             return None
         return self.gpr_Ez.gp.kernel_.get_params()[noise_key]
 
-
     @property
     def noise_level_Hx(self):
         noise_key = None
@@ -66,7 +65,7 @@ class GPRonScanR:
         if noise_key is None:
             return None
         return self.gpr_Hx.gp.kernel_.get_params()[noise_key]
-    
+
     @property
     def noise_level_Hy(self):
         noise_key = None
@@ -78,7 +77,7 @@ class GPRonScanR:
         if noise_key is None:
             return None
         return self.gpr_Hy.gp.kernel_.get_params()[noise_key]
-    
+
     def get_noise_levels(self, dB=False):
         """
         Returns the noise power of the surrogate model. That is the variance of the additive white noise in the measurements.
@@ -87,7 +86,7 @@ class GPRonScanR:
         if dB:
             return 10*np.log10(self.noise_level_Ez), 10*np.log10(self.noise_level_Hx), 10*np.log10(self.noise_level_Hy)
         return self.noise_level_Ez, self.noise_level_Hx, self.noise_level_Hy
-        
+
     def get_noise_std(self):    
         """
         Returns the standard deviation of the noise in the measurements. This can be useful because it is the same units as the fields
@@ -146,6 +145,7 @@ class GPRonScanR:
     def fit_gprs_with_adaptive_kernel(
         self,
         kernel_extractor: DipoleFieldKernelExtractor,
+        include_structural_correlation_estimation: bool = False,
         C_level: Optional[float] = None,
         C_level_bounds: Optional[Tuple[float, float]] = None,
         white_level: Optional[float] = None,
@@ -172,19 +172,34 @@ class GPRonScanR:
                 "The kernel extractor does not have all required kernels. You must first extract the kernels"
             )
 
+        simple_Ez_kernel = kernel_extractor.Ez_kernel
+        simple_Hx_kernel = kernel_extractor.Hx_kernel
+        simple_Hy_kernel = kernel_extractor.Hy_kernel
+
+        if include_structural_correlation_estimation:
+            simple_Ez_kernel = simple_Ez_kernel + C(
+                constant_value=0.3, constant_value_bounds=(1e-5, 1)
+            ) * Matern(length_scale=1.0, length_scale_bounds=(1e-3, 1e3))
+            simple_Hx_kernel = simple_Hx_kernel + C(
+                constant_value=0.3, constant_value_bounds=(1e-5, 1)
+            ) * Matern(length_scale=1.0, length_scale_bounds=(1e-3, 1e3))
+            simple_Hy_kernel = simple_Hy_kernel + C(
+                constant_value=0.3, constant_value_bounds=(1e-5, 1)
+            ) * Matern(length_scale=1.0, length_scale_bounds=(1e-3, 1e3))
+
         Ez_kernel = C(
             C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * kernel_extractor.Ez_kernel + WhiteKernel(
+        ) * simple_Ez_kernel + WhiteKernel(
             white_level, (white_level_bounds[0], white_level_bounds[1])
         )
         Hx_kernel = C(
             C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * kernel_extractor.Hx_kernel + WhiteKernel(
+        ) * simple_Hx_kernel + WhiteKernel(
             white_level, (white_level_bounds[0], white_level_bounds[1])
         )
         Hy_kernel = C(
             C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * kernel_extractor.Hy_kernel + WhiteKernel(
+        ) * simple_Hy_kernel + WhiteKernel(
             white_level, (white_level_bounds[0], white_level_bounds[1])
         )
 
@@ -252,11 +267,10 @@ class GPRonScanR:
                 va="center",
                 rotation="horizontal",
             )
-            
+
         if artistic:
             for axx in ax[:, 1:].flatten():
                 # remove labels and ticks
                 axx.axis("off")
-            
+
         return fig, ax
-            

@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Literal, Iterable
 import numpy as np
 import logging
 from scipy.optimize import minimize
@@ -11,6 +11,7 @@ from my_packages.constants import DistanceUnits
 from ..GPR._gaussian_regression_plotting import GaussianRegressionPlotterMixin
 
 class GPR():
+    MAX_DIM_RANGE = 0.1
     DEFAULT_KERNEL = C() * Matern()
     SPATIAL_UNITS_FOR_PLOTTING = DistanceUnits.mm
     def __init__(
@@ -205,7 +206,6 @@ class GPR():
         ax.set_ylabel("value")
         return fig, ax
 
-
     def plot_priors_on_grid(
         self,
         x: np.ndarray,
@@ -284,3 +284,140 @@ class GPR():
             ax[2].set_title("GP std")
 
         return fig, ax
+    
+    
+    def plot_kernel_1d(self, ax=None, figsize=(6, 4), n_points=100):
+        """
+        Plot the kernel along the x and y axes.
+        """
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+        else:
+            fig = ax.get_figure()
+        
+        x_range = self._calculate_default_range(axis="x")
+        y_range = self._calculate_default_range(axis="y")
+        
+        overall_range  = max(x_range, y_range)
+        overall_range = overall_range * 1.5
+        
+        x = np.linspace(0, overall_range, n_points)
+        y = np.linspace(0, overall_range, n_points)
+        
+        points_x = np.array([x, np.zeros_like(x)]).T
+        points_y = np.array([np.zeros_like(y), y]).T
+        
+        Z_x = self._evaluate_kernel_for_lag(points_x).squeeze()
+        Z_y = self._evaluate_kernel_for_lag(points_y).squeeze()
+        
+        ax.plot(x, Z_x, label="x")
+        ax.plot(y, Z_y, label="y")
+        
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
+        ax.set_xlabel(f"Lag Distance [{self._s_units.name}]")
+        ax.set_ylabel("Kernel value")
+        ax.legend()
+        ax.grid()  
+        return fig, ax
+        
+    
+    def plot_kernel_along_axis(self, ax=None, axis: Literal["x", "y"] = "y", figsize=(6, 4), n_points=100, label=None):
+        """
+        Plot the kernel along the x or y axis.
+        """
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+        else:
+            fig = ax.get_figure()
+
+        if axis == "x":
+            x = np.linspace(0, self._calculate_default_range(axis="x")*1.5, n_points)
+            y = np.zeros_like(x)
+        elif axis == "y":
+            y = np.linspace(0, self._calculate_default_range(axis="y")*1.5, n_points)
+            x = np.zeros_like(y)
+
+        points = np.array([x, y]).T
+        Z = self._evaluate_kernel_for_lag(points).squeeze()
+        ax.plot(x, Z, label=label)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
+        ax.set_xlabel(f"{axis.upper()} [{self._s_units.name}]")
+        ax.set_ylabel("Kernel value")
+        return fig, ax
+
+    def plot_kernel_heatmap(self, ax=None, cmap="jet", figsize=(6, 4), xres=100, yres=100):
+        """
+        Plot the fitted kernel. If the kernel is anisotropic, plot both axes.
+        """
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+        else:
+            fig = ax.get_figure()
+
+        if hasattr(self.gp, "kernel_"):
+            kernel = self.gp.kernel_
+        else:
+            kernel = self.kernel
+
+        x_range = self._calculate_default_range(axis="x")
+        y_range = self._calculate_default_range(axis="y")
+        
+        drange = max(x_range, y_range)
+
+        x = np.linspace(0, drange, xres)
+        y = np.linspace(0, drange, yres)
+        X, Y = np.meshgrid(x, y)
+        grid_points = np.array([X.ravel(), Y.ravel()]).reshape(2, -1).T
+        Z = self._evaluate_kernel_for_lag(grid_points).reshape(xres, yres)
+        c = ax.imshow(Z, origin="lower", extent=(0, drange, 0, drange), cmap=cmap)
+        fig.colorbar(c, ax=ax, label="Kernel value")
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y/self._s_units.value:.1f}"))
+        ax.set_xlabel("X [{}]".format(self._s_units.name))
+        ax.set_ylabel("Y [{}]".format(self._s_units.name))
+        return fig, ax
+
+
+    def _evaluate_kernel_for_lag(self, lag: Iterable[float]):
+        position_0 = np.array([[0, 0]])
+        if not isinstance(lag, np.ndarray):
+            lag = np.array(lag)
+        if np.ndim(lag) == 1:
+            lag = lag.reshape(1, -1)
+        elif np.ndim(lag) > 2:
+            raise ValueError("lag must be a 1D or 2D array")
+        if lag.shape[1] == 1:
+            lag = np.concatenate([lag, np.zeros((lag.shape[0], 1))], axis=1)
+        elif lag.shape[1] > 2:
+            raise ValueError("lag must have 1 or 2 columns") 
+        return self.gp.kernel_(position_0, lag)
+
+    def _calculate_default_range(
+        self,
+        axis: Literal["x", "y"] = "y",
+        ratio: float = 1 / 20,
+        max_iterations: int = 20,
+        tolerance: float = 1e-4,
+    ):
+        max_field = float(self._evaluate_kernel_for_lag([0, 0]).squeeze())
+        target_field = max_field * ratio
+
+        left, right = 0, self.MAX_DIM_RANGE
+        for _ in range(max_iterations):
+            mid = (left + right) / 2
+            if axis == "x":
+                mid_point = [[mid, 0]]
+            elif axis == "y":
+                mid_point = [[0, mid]]
+            else:
+                raise ValueError("axis must be 'x' or 'y'")
+
+            field_at_mid = float(self._evaluate_kernel_for_lag(mid_point).squeeze())
+            if np.abs(field_at_mid - target_field) < tolerance:
+                break
+            elif field_at_mid > target_field:
+                left = mid
+            else:
+                right = mid
+
+        return mid
