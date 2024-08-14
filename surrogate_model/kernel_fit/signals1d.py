@@ -30,7 +30,7 @@ class ModelKernel1D:
         self.constant, self.scale = self.fit_rbf_length_scale_static(
             self.x_values, self.y_values, method=method, bounds=bounds
         )
-        self.kernel = self.constant * RBF(length_scale=self.scale, length_scale_bounds="fixed")
+        self.kernel = C(self.constant, "fixed") * RBF(length_scale=self.scale, length_scale_bounds="fixed")
         return self.constant, self.scale
 
     def fit_multi_rbf(self, n, method="Nelder-Mead", bounds=None):
@@ -40,9 +40,9 @@ class ModelKernel1D:
         rbf_list = []
         self.weights = list(self.weights) + [1 - sum(self.weights)]
         for scale, weight in zip(self.scales, self.weights):
-            rbf_list.append(weight * RBF(length_scale=scale, length_scale_bounds="fixed"))
+            rbf_list.append(C(weight, "fixed") * RBF(length_scale=scale, length_scale_bounds="fixed"))
         
-        self.kernel = self.constant * np.sum(rbf_list)
+        self.kernel = C(self.constant, "fixed") * np.sum(rbf_list)
         return self.constant, self.scales, self.weights
 
     def fit_matern(self, method="Nelder-Mead", bounds=-1):
