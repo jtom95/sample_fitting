@@ -26,11 +26,14 @@ class OKPlotterMixinClass:
         return fig, ax
 
     def plot_variogram(
-        self, include_table: bool= True, 
-        units: str="", ax=None, 
-        legend_loc: str="best",
-        **kwargs
-        ) -> Tuple[plt.Figure, np.ndarray]:
+        self,
+        include_table: bool = True,
+        units: str = "",
+        ax=None,
+        legend_loc: str = "best",
+        gpr_gaussian_scale_length: bool = False,
+        **kwargs,
+    ) -> Tuple[plt.Figure, np.ndarray]:
         """
         Plot the fitted variogram model.
         """
@@ -84,14 +87,15 @@ class OKPlotterMixinClass:
         # ax.legend()
 
         fig, ax = self.variogram_analyzer.plot_fitted_variogram(
-            fitted_variogram_dict, 
-            distance_units = self.configs.units, 
-            units = units,
+            fitted_variogram_dict,
+            distance_units=self.configs.units,
+            units=units,
             include_table=include_table,
-            ax = ax,
+            ax=ax,
             legend_loc=legend_loc,
-            **kwargs
-            )
+            gpr_gaussian_scale_length=gpr_gaussian_scale_length,
+            **kwargs,
+        )
 
         return fig, ax
 
@@ -106,21 +110,19 @@ class OKPlotterMixinClass:
         fig, ax = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
         ok_scan, std = self.surrogate_model.predict_scan_and_std(grid, raw_scan.f)
-        
+
         vmax_raw = raw_scan.to_Scan().v.max()
         vmin_raw = raw_scan.to_Scan().v.min()
-        
+
         vmax_ok = ok_scan.to_Scan().v.max()
         vmin_ok = ok_scan.to_Scan().v.min()
-        
+
         vmax = max(vmax_raw, vmax_ok)
         vmin = min(vmin_raw, vmin_ok)
-        
+
         raw_scan.plot(ax=ax[0], **kwargs, vmin=vmin, vmax=vmax, units=units, build_colorbar=False)
         ok_scan.plot(ax=ax[1], **kwargs, vmin=vmin, vmax=vmax, units=units)
-        
-        
-        
+
         ax[0].set_title("Raw Scan")
         ax[1].set_title("Prediction Scan")
         fig.suptitle(f"Frequency: {raw_scan.f*1e-6:.1f} MHz")
@@ -146,7 +148,7 @@ class OKPlotterMixinClass:
 
         y_pred, std = self.predict(X_test, return_std=True)
         error = y_test - y_pred.squeeze()   
-        
+
         if ax is None:
             fig, ax = plt.subplots(figsize=figsize)
         else:
@@ -161,7 +163,7 @@ class OKPlotterMixinClass:
         ax.yaxis.set_major_formatter(
             plt.FuncFormatter(lambda x, _: f"{x/self.configs.units.value:.1f}")
         )
-        
+
         ax.set_title("Prediction Error")
 
         cbar = plt.colorbar(sc, ax=ax)
@@ -247,13 +249,12 @@ class OKPlotterMixinClass:
         ax1.set_ylabel(f"Y ({self.configs.units.name})")
         ax1.set_title("Kriging Weights")
         fig.colorbar(q, ax=ax1, label="Weight")
-        
+
         k = min(num_histogram_weights, len(weights))
 
         top_k_indices = np.argsort(weights)[-k:]
         top_k_weights = weights[top_k_indices]
         top_k_positions = self.X_train[top_k_indices] / self.configs.units.value
-        
 
         ax2.barh(np.arange(k), top_k_weights, align="center", alpha=0.5)
         ax2.set_yticks(np.arange(k))

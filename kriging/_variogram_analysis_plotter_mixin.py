@@ -17,6 +17,7 @@ class VariogramAnalyzerPlottingMixin:
         units: str = "",
         figsize=(10, 3),
         legend_loc: str = "upper right",
+        gpr_gaussian_scale_length = False,
         **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
@@ -86,7 +87,13 @@ class VariogramAnalyzerPlottingMixin:
                 if isinstance(param, (list, np.ndarray)):
                     param = param[0]
                 param = param / distance_units.value
-                model_params_str += f"{k}: {param:.1f} {distance_units.name}\n"
+                if gpr_gaussian_scale_length:
+                    scale_length = (param * 4 / 7) / np.sqrt(2)
+                    model_params_str += (
+                        f"RBF Scale Length: {scale_length:.1f} {distance_units.name}\n"
+                    )
+                else:
+                    model_params_str += f"{k}: {param:.1f} {distance_units.name}\n"
                 continue
             else:
                 k = k.capitalize()

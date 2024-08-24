@@ -110,7 +110,10 @@ class DipoleFieldKernelExtractor:
         kernels = []
         for (scale_x, weight_x), (scale_y, weight_y) in product(zip(lengths_x, weights_x), zip(lengths_y, weights_y)):
             combined_weight = weight_x * weight_y
-            kernels.append(RBF(length_scale=[scale_x, scale_y], length_scale_bounds="fixed") * combined_weight)
+            kernels.append(
+                RBF(length_scale=[scale_x, scale_y], length_scale_bounds="fixed")
+                * C(combined_weight, constant_value_bounds="fixed")
+            )
         final_kernel = np.sum(kernels)
         return final_kernel
 
@@ -130,7 +133,7 @@ class DipoleFieldKernelExtractor:
             if self.dim_range is None: 
                 self._range_in_use = self._calculate_default_range(base_dipole=base_dipole, axis=axis)    
             points = self.r_x if axis == "x" else self.r_y
-        
+
         axis_points = points[:, 0] if axis == "x" else points[:, 1]
 
         calc = HighLevelDipoleFieldCalculator.init_from_single_dipole(

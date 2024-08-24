@@ -92,7 +92,35 @@ class GPR():
         values = self.predict(points)
         values = values.reshape(len(x), len(y))
         return values
-
+    
+    def predict_Scan(        
+        self, 
+        original_scan: Scan,
+        x: np.ndarray,
+        y: np.ndarray,
+        return_std: bool = False
+    )-> Union[Scan, Tuple[Scan, Scan]]:
+        h = original_scan.height
+        grid = Grid(np.meshgrid(x, y, h, indexing="ij"))
+        if return_std:
+            values, std = self.predict_grid(x, y, return_std=return_std)
+            new_scan = original_scan.create_new(
+                scan=values,
+                grid=grid
+            )   
+            std = original_scan.create_new(
+                scan=std,
+                grid=grid,
+            )
+            return new_scan, std
+        else:
+            values = self.predict_grid(x, y)
+            new_scan = original_scan.create_new(
+                scan=values,
+                grid=grid
+            )
+            return new_scan
+        
     def plot_gp_2d(
         self,
         x: np.ndarray,
@@ -105,7 +133,8 @@ class GPR():
         include_std=True,
         inlcude_samples=True,
         marker_size = 3,
-        units = ""
+        units = "",
+        aspect = "auto"
     ):
 
         X, Y = np.meshgrid(x, y)
@@ -127,22 +156,22 @@ class GPR():
             fig = ax[0].get_figure() if include_std else ax.get_figure()
 
         if include_std:
-            ax[0].imshow(
+            q1 = ax[0].imshow(
                 Z,
                 extent=(*xbounds, *ybounds),
                 origin="lower",
                 cmap=cmap,
-                aspect="auto",
+                aspect=aspect,
                 vmin=vmin,
                 vmax=vmax,
             )
 
-            ax[1].contourf(X, Y, std, cmap=cmap)
+            q2 = ax[1].contourf(X, Y, std, cmap=cmap)
             for axx in ax:
                 axx.set_xlabel("x")
                 axx.set_ylabel("y")
-            fig.colorbar(ax[0].images[0], ax=ax[0], label=units)
-            fig.colorbar(ax[1].collections[0], ax=ax[1], label=units)
+            fig.colorbar(q1, ax=ax[0], label=units)
+            fig.colorbar(q2, ax=ax[1], label=units)
 
             ax[0].set_title("Prediction")
             ax[1].set_title("Standard deviation")
