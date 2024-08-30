@@ -146,6 +146,8 @@ class GPRonScanR:
         self,
         kernel_extractor: DipoleFieldKernelExtractor,
         include_structural_correlation_estimation: bool = False,
+        estimate_noise: bool = False,
+        estimate_C: bool = False,
         C_level: Optional[float] = None,
         C_level_bounds: Optional[Tuple[float, float]] = None,
         white_level: Optional[float] = None,
@@ -186,22 +188,34 @@ class GPRonScanR:
             simple_Hy_kernel = simple_Hy_kernel + C(
                 constant_value=0.3, constant_value_bounds=(1e-5, 1)
             ) * Matern(length_scale=1.0, length_scale_bounds=(1e-3, 1e3))
-
-        Ez_kernel = C(
-            C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * simple_Ez_kernel + WhiteKernel(
-            white_level, (white_level_bounds[0], white_level_bounds[1])
-        )
-        Hx_kernel = C(
-            C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * simple_Hx_kernel + WhiteKernel(
-            white_level, (white_level_bounds[0], white_level_bounds[1])
-        )
-        Hy_kernel = C(
-            C_level, (C_level_bounds[0], C_level_bounds[1])
-        ) * simple_Hy_kernel + WhiteKernel(
-            white_level, (white_level_bounds[0], white_level_bounds[1])
-        )
+        
+        Ez_kernel = simple_Ez_kernel
+        Hx_kernel = simple_Hx_kernel
+        Hy_kernel = simple_Hy_kernel
+        
+        if estimate_C:
+            Ez_kernel = C(
+                C_level, (C_level_bounds[0], C_level_bounds[1])
+            ) * simple_Ez_kernel
+            Hx_kernel = C(
+                C_level, (C_level_bounds[0], C_level_bounds[1])
+            ) * simple_Hx_kernel
+            Hy_kernel = C(
+                C_level, (C_level_bounds[0], C_level_bounds[1])
+            ) * simple_Hy_kernel
+        
+        if estimate_noise:
+            Ez_kernel = Ez_kernel + WhiteKernel(
+                white_level, (white_level_bounds[0], white_level_bounds[1])
+            )
+            
+            Hx_kernel = Hx_kernel + WhiteKernel(
+                white_level, (white_level_bounds[0], white_level_bounds[1])
+            )
+            
+            Hy_kernel = Hy_kernel + WhiteKernel(
+                white_level, (white_level_bounds[0], white_level_bounds[1])
+            )
 
         gpr_Ez = GPR(
             kernel = Ez_kernel, alpha=self.alpha, n_restarts_optimizer=self.n_restarts_optimizer
@@ -243,17 +257,17 @@ class GPRonScanR:
 
         return fig
 
-    def compare_fitting1(self, new_scanR: ScanRegistry, figsize=(8, 6), include_samples=True, quid_labels_fontsize=12, artistic=False):
+    def compare_fitting1(self, new_scanR: ScanRegistry, figsize=(8, 6), include_samples=True, quid_labels_fontsize=12, artistic=False, gpr_shape=(50, 50)):
         width_ratios = [0.05] + [1]*3
         fig, ax = plt.subplots(3, 4, figsize=figsize, constrained_layout=True, width_ratios=width_ratios)
         self.gpr_Ez.compare_with_scan(
-            scan=new_scanR.getR(height=self.height).get(quid="Ez")[0].to_Scan(), include_samples=include_samples, ax=ax[0, 1:]
+            scan=new_scanR.getR(height=self.height).get(quid="Ez")[0].to_Scan(), include_samples=include_samples, ax=ax[0, 1:], shape=gpr_shape
         )
         self.gpr_Hx.compare_with_scan(
-            scan = new_scanR.getR(height=self.height).get(quid="Hx")[0].to_Scan(), include_samples= include_samples, ax=ax[1, 1:]
+            scan = new_scanR.getR(height=self.height).get(quid="Hx")[0].to_Scan(), include_samples= include_samples, ax=ax[1, 1:], shape=gpr_shape
         )
         self.gpr_Hy.compare_with_scan(
-            scan = new_scanR.getR(height=self.height).get(quid="Hy")[0].to_Scan(), include_samples= include_samples, ax=ax[2, 1:]
+            scan = new_scanR.getR(height=self.height).get(quid="Hy")[0].to_Scan(), include_samples= include_samples, ax=ax[2, 1:], shape=gpr_shape
         )
 
         for axx, quid in zip(ax[:, 0], ["Ez", "Hx", "Hy"]):
