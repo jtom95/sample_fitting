@@ -74,6 +74,13 @@ class GPR():
             X, n_samples=n_samples, random_state=random_state
         )
         return y_predicted
+    
+    def sample_posterior_gp(self, X: np.ndarray, y: np.ndarray, n_samples: int = 5, random_state=None) -> np.ndarray:
+        self.fit(X, y)
+        y_predicted = self.gp.sample_y(
+            X, n_samples=n_samples, random_state=random_state
+        )
+        return y_predicted
 
     def predict_grid(
         self, 
@@ -92,7 +99,40 @@ class GPR():
         values = self.predict(points)
         values = values.reshape(len(x), len(y))
         return values
-
+    
+    def predict_Scan(        
+        self, 
+        original_scan: Scan,
+        x: np.ndarray = None,
+        y: np.ndarray = None,
+        return_std: bool = False
+    )-> Union[Scan, Tuple[Scan, Scan]]:
+        h = original_scan.height
+        if x is None:
+            x = original_scan.grid.x
+        if y is None:
+            y = original_scan.grid.y
+            
+        grid = Grid(np.meshgrid(x, y, h, indexing="ij"))
+        if return_std:
+            values, std = self.predict_grid(x, y, return_std=return_std)
+            new_scan = original_scan.create_new(
+                scan=values,
+                grid=grid
+            )   
+            std = original_scan.create_new(
+                scan=std,
+                grid=grid,
+            )
+            return new_scan, std
+        else:
+            values = self.predict_grid(x, y)
+            new_scan = original_scan.create_new(
+                scan=values,
+                grid=grid
+            )
+            return new_scan
+        
     def plot_gp_2d(
         self,
         x: np.ndarray,
@@ -105,7 +145,8 @@ class GPR():
         include_std=True,
         inlcude_samples=True,
         marker_size = 3,
-        units = ""
+        units = "",
+        aspect = "auto"
     ):
 
         X, Y = np.meshgrid(x, y)
@@ -127,22 +168,22 @@ class GPR():
             fig = ax[0].get_figure() if include_std else ax.get_figure()
 
         if include_std:
-            ax[0].imshow(
+            q1 = ax[0].imshow(
                 Z,
                 extent=(*xbounds, *ybounds),
                 origin="lower",
                 cmap=cmap,
-                aspect="auto",
+                aspect=aspect,
                 vmin=vmin,
                 vmax=vmax,
             )
 
-            ax[1].contourf(X, Y, std, cmap=cmap)
+            q2 = ax[1].contourf(X, Y, std, cmap=cmap)
             for axx in ax:
                 axx.set_xlabel("x")
                 axx.set_ylabel("y")
-            fig.colorbar(ax[0].images[0], ax=ax[0], label=units)
-            fig.colorbar(ax[1].collections[0], ax=ax[1], label=units)
+            fig.colorbar(q1, ax=ax[0], label=units)
+            fig.colorbar(q2, ax=ax[1], label=units)
 
             ax[0].set_title("Prediction")
             ax[1].set_title("Standard deviation")
@@ -224,6 +265,87 @@ class GPR():
         points = np.array([X.ravel(), Y.ravel()]).T
 
         y_samples = self.sample_prior_gp(points, n_samples=n_samples)
+
+        n_subplots = (n_samples + subplots_per_row - 1) // subplots_per_row
+        figsize = (5 * subplots_per_row, 5 * n_subplots) if figsize is None else figsize
+
+        if ax is None:
+            fig, ax = plt.subplots(
+                n_subplots, subplots_per_row, figsize=figsize, constrained_layout=True
+            )
+            ax = ax.flatten()
+        else:
+            fig = ax[0].get_figure()
+
+        for i in range(n_samples):
+            Z = y_samples[:, i].reshape(X.shape)
+            ax[i].imshow(
+                Z,
+                extent=(x.min(), x.max(), y.min(), y.max()),
+                origin="lower",
+                cmap=cmap,
+                aspect=aspect,
+                vmin=vmin,
+                vmax=vmax,
+            )
+            ax[i].set_title(f"Sample {i + 1}")
+            ax[i].set_xlabel(f"X [{self._s_units.name}]")
+            ax[i].set_ylabel(f"Y [{self._s_units.name}]")
+            fig.colorbar(ax[i].images[0], ax=ax[i], label=units)
+
+        for j in range(i + 1, len(ax)):
+            fig.delaxes(ax[j])
+
+        return fig, ax
+    
+    def plot_posterior_gp_candidates(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        n_samples: int = 4,
+        ax: plt.Axes = None,
+        linewidth: float = 1,
+    ):
+        """
+        Plot posterior GP candidates.
+        :param X: 2D array of spatial coordinates (shape [n_samples, 2]).
+        :param y: 1D array of observed values (shape [n_samples]).
+        :param n_samples: Number of posterior samples to draw.
+        :param ax: Matplotlib axes to plot on. If None, a new figure and axes will be created.
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 6))
+        else:
+            fig = ax.get_figure()
+        if np.ndim(X) == 1:
+            X = X.reshape(-1, 1)
+        self.fit(X, y)
+        y_samples = self.sample_posterior_gp(X, n_samples=n_samples)
+        for i, y_sample in enumerate(y_samples.T):
+            ax.plot(X[:, 0], y_sample, alpha=1, linewidth=linewidth)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
+        ax.set_xlabel("X [{}]".format(self._s_units.name))
+        ax.set_ylabel("value")
+        return fig, ax
+    
+    def plot_posteriors_on_grid(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        n_samples: int = 4,
+        ax=None,
+        figsize=None,
+        cmap="jet",
+        vmin=None,
+        vmax=None,
+        units="",
+        subplots_per_row=2,
+        aspect="auto",
+    ):
+        X, Y = np.meshgrid(x, y)
+        points = np.array([X.ravel(), Y.ravel()]).T
+
+        y_samples = self.sample_posterior_gp(points, n_samples=n_samples)
 
         n_subplots = (n_samples + subplots_per_row - 1) // subplots_per_row
         figsize = (5 * subplots_per_row, 5 * n_subplots) if figsize is None else figsize
