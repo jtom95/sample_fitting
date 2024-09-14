@@ -75,8 +75,9 @@ class GPR():
         )
         return y_predicted
     
-    def sample_posterior_gp(self, X: np.ndarray, y: np.ndarray, n_samples: int = 5, random_state=None) -> np.ndarray:
-        self.fit(X, y)
+    def sample_posterior_gp(self, X: np.ndarray, y: np.ndarray = None, n_samples: int = 5, random_state=None) -> np.ndarray:
+        if y is not None:
+            self.fit(X, y)
         y_predicted = self.gp.sample_y(
             X, n_samples=n_samples, random_state=random_state
         )
@@ -143,7 +144,7 @@ class GPR():
         vmin=None,
         vmax=None,
         include_std=True,
-        inlcude_samples=True,
+        include_samples=True,
         marker_size = 3,
         units = "",
         aspect = "auto"
@@ -203,7 +204,7 @@ class GPR():
 
             ax.set_title("Prediction")
 
-        if inlcude_samples:
+        if include_samples:
             training_X = self.gp.X_train_
             for axx in ax:
                 axx.scatter(
@@ -216,8 +217,8 @@ class GPR():
         for axx in ax:
             axx.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
             axx.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y/self._s_units.value:.1f}"))
-            axx.set_xlabel("X [{}]".format(self._s_units.name))
-            axx.set_ylabel("Y [{}]".format(self._s_units.name))
+            axx.set_xlabel("x [{}]".format(self._s_units.name))
+            axx.set_ylabel("y [{}]".format(self._s_units.name))
         return fig, ax
 
     def plot_prior_gp_candidates(
@@ -305,6 +306,7 @@ class GPR():
         n_samples: int = 4,
         ax: plt.Axes = None,
         linewidth: float = 1,
+        random_state: int = None,
     ):
         """
         Plot posterior GP candidates.
@@ -320,7 +322,7 @@ class GPR():
         if np.ndim(X) == 1:
             X = X.reshape(-1, 1)
         self.fit(X, y)
-        y_samples = self.sample_posterior_gp(X, n_samples=n_samples)
+        y_samples = self.sample_posterior_gp(X, y, n_samples=n_samples, random_state=random_state)
         for i, y_sample in enumerate(y_samples.T):
             ax.plot(X[:, 0], y_sample, alpha=1, linewidth=linewidth)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/self._s_units.value:.1f}"))
@@ -341,11 +343,16 @@ class GPR():
         units="",
         subplots_per_row=2,
         aspect="auto",
+        artistic = False,
+        remove_cbars = False,
+        include_samples = False,
+        sample_scatter_size = 3,
+        seed = None
     ):
         X, Y = np.meshgrid(x, y)
         points = np.array([X.ravel(), Y.ravel()]).T
 
-        y_samples = self.sample_posterior_gp(points, n_samples=n_samples)
+        y_samples = self.sample_posterior_gp(points, n_samples=n_samples, random_state=seed)
 
         n_subplots = (n_samples + subplots_per_row - 1) // subplots_per_row
         figsize = (5 * subplots_per_row, 5 * n_subplots) if figsize is None else figsize
@@ -372,11 +379,27 @@ class GPR():
             ax[i].set_title(f"Sample {i + 1}")
             ax[i].set_xlabel(f"X [{self._s_units.name}]")
             ax[i].set_ylabel(f"Y [{self._s_units.name}]")
-            fig.colorbar(ax[i].images[0], ax=ax[i], label=units)
+            if not remove_cbars:
+                fig.colorbar(ax[i].images[0], ax=ax[i], label=units)
+
+        if include_samples:
+            training_X = self.gp.X_train_
+            for axx in ax:
+                axx.scatter(
+                    training_X[:, 0],
+                    training_X[:, 1],
+                    color="w",
+                    edgecolor="k",
+                    s=sample_scatter_size,
+                )
 
         for j in range(i + 1, len(ax)):
             fig.delaxes(ax[j])
 
+        if artistic:
+            for axx in ax.flatten():
+                axx.axis("off")
+                axx.set_title("")
         return fig, ax
 
     def compare_with_scan(self, scan: Scan, ax=None, shape: Tuple[int, int] = (50, 50), include_std: bool = True, include_samples: bool = False, figsize=(12, 4), marker_size=3):
@@ -397,9 +420,9 @@ class GPR():
         x = np.linspace(scan.grid.x.min(), scan.grid.x.max(), new_shape_x)
         y = np.linspace(scan.grid.y.min(), scan.grid.y.max(), new_shape_y)
         if include_std:
-            self.plot_gp_2d(x, y, ax=ax[1:], include_std=include_std, inlcude_samples=include_samples, marker_size=marker_size, vmin=vmin, vmax=vmax, units = units)   
+            self.plot_gp_2d(x, y, ax=ax[1:], include_std=include_std, include_samples=include_samples, marker_size=marker_size, vmin=vmin, vmax=vmax, units = units)   
         else:
-            self.plot_gp_2d(x, y, ax=ax[1], include_std=include_std, inlcude_samples=include_samples, marker_size=marker_size, vmin=vmin, vmax=vmax, units = units)    
+            self.plot_gp_2d(x, y, ax=ax[1], include_std=include_std, include_samples=include_samples, marker_size=marker_size, vmin=vmin, vmax=vmax, units = units)    
         ax[0].set_title("Scan")
         ax[1].set_title("GP prediction")
         if include_std:
